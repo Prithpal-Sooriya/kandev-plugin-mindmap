@@ -1,9 +1,9 @@
 // Package tools routes agent tool calls from every transport (Kandev MCP,
 // the /agent/v1 bridge API, and mindmap-patch blocks) to one implementation.
 //
-// This is the contract-stage stub: argument decoding and validation are real,
-// every handler returns not_implemented. Phase 1a registers real handlers with
-// Register.
+// NewStub returns a dispatcher whose handlers validate and then answer
+// not_implemented; NewDispatcher (tools.go) registers the real
+// implementations from Tools.
 package tools
 
 import (
@@ -77,6 +77,14 @@ func (d *Dispatcher) Invoke(ctx context.Context, c Caller, name string, rawArgs 
 	}
 	if res.Text == "" {
 		res.Text = "ok" // Kandev rejects empty result text
+	}
+	// Structured content crosses gRPC as a protobuf Struct, which only takes
+	// plain JSON values: round-trip it so typed values become maps/strings.
+	if res.Structured != nil {
+		var plain map[string]any
+		if b, err := json.Marshal(res.Structured); err == nil && json.Unmarshal(b, &plain) == nil {
+			res.Structured = plain
+		}
 	}
 	return res
 }
