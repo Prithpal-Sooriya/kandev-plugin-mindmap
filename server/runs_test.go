@@ -315,8 +315,8 @@ func TestSwarm(t *testing.T) {
 		tool(t, p, r.TaskID, "report", map[string]any{"summary": "Done.", "status": "done"})
 		state(p, r.TaskID, "WAITING_FOR_INPUT")
 	}
-	if c := getRun(t, p, coord.ID); c.Status != contract.RunDone {
-		t.Fatalf("coordinator after all done: %s", c.Status)
+	if c := getRun(t, p, coord.ID); c.Status != contract.RunDone || c.Usage.Nodes != 1 || c.Usage.Subagents != 3 {
+		t.Fatalf("coordinator after all done: %s %+v", c.Status, c.Usage)
 	}
 	if n, _ := p.store.Node(m.ID, m.RootID); n.Status != contract.StatusDone || n.RunID != coord.ID {
 		t.Fatalf("swarm node ring: %s %s", n.Status, n.RunID)
@@ -431,6 +431,13 @@ func TestStopAndMessage(t *testing.T) {
 	}
 	if n, _ := p.store.Node(m.ID, m.RootID); n.Status != contract.StatusIdle || n.Claim != nil {
 		t.Fatalf("node after stop: %s claim %+v", n.Status, n.Claim)
+	}
+	// Mid-turn tool calls from a stopped run cannot write; reads and report still work.
+	if res := tool(t, p, r.TaskID, "add", map[string]any{"nodes": []any{map[string]any{"title": "Late idea"}}}); !res.IsError || !strings.Contains(res.Text, "run_ended") {
+		t.Fatalf("write after stop: %s", res.Text)
+	}
+	if res := tool(t, p, r.TaskID, "report", map[string]any{"summary": "Stopped as asked.", "status": "review"}); res.IsError {
+		t.Fatalf("report after stop: %s", res.Text)
 	}
 	// Late session states keep it stopped; stopping again is a no-op.
 	state(p, r.TaskID, "RUNNING")
@@ -587,5 +594,16 @@ func TestTaskPanelRoutes(t *testing.T) {
 	st, b = api(t, p, "GET", "/api/runs/tasks", nil)
 	if st != 200 || !strings.Contains(string(b), r.TaskID) {
 		t.Fatalf("run tasks: %d %s", st, b)
+	}
+}
+
+func TestFailedRunKeepsAgentError(t *testing.T) {
+	p, _ := newTestPluginHost(t)
+	m := newMapViaAPI(t, p)
+	r := apiRuns(t, p, "/api/maps/"+m.ID+"/runs", map[string]any{"node_id": m.RootID, "template": "research", "profile_id": "prof-claude"})[0]
+	_ = p.OnEvent(context.Background(), event("task_session.state_changed", map[string]any{"task_id": r.TaskID, "new_state": "FAILED",
+		"error_message": "", "session_metadata": map[string]any{"last_agent_error": map[string]any{"message": "Spend limit reached"}}}))
+	if got := getRun(t, p, r.ID); got.Status != contract.RunFailed || got.Error != "Spend limit reached" {
+		t.Fatalf("failed run: %s %q", got.Status, got.Error)
 	}
 }

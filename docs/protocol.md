@@ -402,8 +402,10 @@ turn_ended | approval`).
 4. **Stop.** The Host API cannot stop a session (spike finding 5). Stop marks the run `stopped` right away (with
    `stop_requested` and `ended_at`), revokes its run tokens, releases its claims, and sends
    `Messages().Send("Stop now: … call report with status review and end your turn.")`. Later session states keep
-   it `stopped`. Bridge calls fail at once (token revoked); Kandev MCP calls from the task keep working for the
-   10-minute grace (so the agent can `report`), then fail with `run_ended`. Stopping a
+   it `stopped`. Kandev queues plugin messages while a turn is running, so the agent only reads the stop message
+   when its turn ends; until then every write tool (and `mindmap-patch` block) from the run fails with
+   `run_ended`. Bridge calls fail at once (token revoked); Kandev MCP reads and `report` keep working for the
+   10-minute grace, then fail with `run_ended` too. Stopping a
    stopped run is a no-op. The UI also links to the task. A `message` to a stopped run re-opens it (clears
    `stop_requested`; bridge runs get a fresh token in the message) and the next `RUNNING` state makes it `running`.
 5. **Budget.** `usage` is summed across the run tree (`root_run_id`). Writes that would exceed it fail with

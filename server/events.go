@@ -43,19 +43,37 @@ func (p *mindmapPlugin) OnEvent(ctx context.Context, e *pluginsdk.Event) error {
 	}
 	switch e.EventType {
 	case "task_session.state_changed":
-		p.onSessionState(run, str(e.Payload, "session_id"), str(e.Payload, "new_state"))
+		p.onSessionState(run, str(e.Payload, "session_id"), str(e.Payload, "new_state"), sessionError(e.Payload))
 	case "agent.completed":
-		p.onSessionState(run, str(e.Payload, "session_id"), contract.SessionCompleted)
+		p.onSessionState(run, str(e.Payload, "session_id"), contract.SessionCompleted, "")
 	case "agent.failed":
-		p.onSessionState(run, str(e.Payload, "session_id"), contract.SessionFailed)
+		p.onSessionState(run, str(e.Payload, "session_id"), contract.SessionFailed, sessionError(e.Payload))
 	case "message.added", "message.updated":
 		p.onMessage(ctx, run, e.EventType, e.Payload)
 	}
 	return nil
 }
 
-// onSessionState applies contract.NextRunStatus and broadcasts.
-func (p *mindmapPlugin) onSessionState(run store.RunRecord, sessionID, newState string) {
+// sessionError is the agent error a session event carries, if any.
+func sessionError(payload map[string]any) string {
+	msg := str(payload, "error_message")
+	if msg == "" {
+		if md, ok := payload["session_metadata"].(map[string]any); ok {
+			if le, ok := md["last_agent_error"].(map[string]any); ok {
+				msg = str(le, "message")
+			}
+		}
+	}
+	msg = strings.TrimSpace(msg)
+	if r := []rune(msg); len(r) > 500 {
+		msg = string(r[:500])
+	}
+	return msg
+}
+
+// onSessionState applies contract.NextRunStatus and broadcasts. errMsg is
+// kept as the run's error when the run fails.
+func (p *mindmapPlugin) onSessionState(run store.RunRecord, sessionID, newState, errMsg string) {
 	if newState == "" {
 		return // some state_changed payloads lack new_state: ignore
 	}
@@ -69,6 +87,10 @@ func (p *mindmapPlugin) onSessionState(run store.RunRecord, sessionID, newState 
 		}
 		if ok && (st != r.Status || wr != r.WaitingReason) {
 			r.Status, r.WaitingReason = st, wr
+			changed = true
+		}
+		if errMsg != "" && r.Error == "" && r.Status == contract.RunFailed {
+			r.Error = errMsg
 			changed = true
 		}
 		return changed

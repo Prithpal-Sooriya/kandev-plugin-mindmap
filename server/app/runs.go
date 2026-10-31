@@ -564,14 +564,17 @@ func (s *Service) syncCoordinator(runID string) {
 		usage.Nodes += k.Usage.Nodes
 		usage.Depth = max(usage.Depth, k.Usage.Depth)
 	}
+	statusChanged := false
 	r, saved, err := s.updateRun(coord.ID, func(r *store.RunRecord) bool {
-		if r.Status == st && r.WaitingReason == wr {
+		usage.Subagents = r.Usage.Subagents
+		if r.Status == st && r.WaitingReason == wr && r.Usage == usage {
 			return false
 		}
-		r.Status, r.WaitingReason = st, wr
+		statusChanged = r.Status != st || r.WaitingReason != wr
+		r.Status, r.WaitingReason, r.Usage = st, wr, usage
 		return true
 	})
-	if err != nil || !saved {
+	if err != nil || !saved || !statusChanged {
 		return
 	}
 	s.SetRunNodeStatus(r)
