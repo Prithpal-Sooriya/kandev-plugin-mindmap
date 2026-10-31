@@ -2,11 +2,59 @@ package share
 
 import "kandev-plugin-mindmap/server/contract"
 
+// SharedDefaultConcurrent is the run concurrency cap on a shared map when
+// neither the map nor the plugin settings name one. Unshared maps stay
+// unlimited.
+const SharedDefaultConcurrent = 4
+
 // RunCaps are the ceilings for one map. A zero field means that dimension
 // is not capped.
 type RunCaps struct {
 	MaxConcurrent int
 	MaxBudget     contract.Budget
+}
+
+// FillSharedDefaults applies a non-zero ceiling while a map is shared and
+// the host left that dimension at zero. A positive host or plugin cap is
+// kept as-is (the tighter of the two was already chosen). fallback is the
+// built-in budget (store.DefaultBudget).
+func FillSharedDefaults(caps RunCaps, shared bool, fallback contract.Budget) RunCaps {
+	if !shared {
+		return caps
+	}
+	if caps.MaxConcurrent <= 0 {
+		caps.MaxConcurrent = SharedDefaultConcurrent
+	}
+	caps.MaxBudget.MaxDepth = positiveOr(caps.MaxBudget.MaxDepth, fallback.MaxDepth)
+	caps.MaxBudget.MaxNodes = positiveOr(caps.MaxBudget.MaxNodes, fallback.MaxNodes)
+	caps.MaxBudget.MaxSubagents = positiveOr(caps.MaxBudget.MaxSubagents, fallback.MaxSubagents)
+	caps.MaxBudget.MaxMinutes = positiveOr(caps.MaxBudget.MaxMinutes, fallback.MaxMinutes)
+	return caps
+}
+
+func positiveOr(v, fallback int) int {
+	if v > 0 {
+		return v
+	}
+	return fallback
+}
+
+// ClampBudget lowers any field of b that is above a positive cap. A zero
+// cap does not change that field.
+func ClampBudget(b, cap contract.Budget) contract.Budget {
+	if cap.MaxDepth > 0 && b.MaxDepth > cap.MaxDepth {
+		b.MaxDepth = cap.MaxDepth
+	}
+	if cap.MaxNodes > 0 && b.MaxNodes > cap.MaxNodes {
+		b.MaxNodes = cap.MaxNodes
+	}
+	if cap.MaxSubagents > 0 && b.MaxSubagents > cap.MaxSubagents {
+		b.MaxSubagents = cap.MaxSubagents
+	}
+	if cap.MaxMinutes > 0 && b.MaxMinutes > cap.MaxMinutes {
+		b.MaxMinutes = cap.MaxMinutes
+	}
+	return b
 }
 
 // CheckRunCaps reports whether starting `starting` more runs with the

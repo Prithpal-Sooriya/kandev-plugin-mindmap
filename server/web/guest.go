@@ -76,3 +76,12 @@ func (s *Server) limitKey(r *http.Request, p *principal) string {
 	}
 	return "local:" + p.token.ID
 }
+
+// runLimitKey keys run starts by the share link, not the guest cookie.
+// Joining again mints a new guest token; the run bucket stays put.
+func (s *Server) runLimitKey(r *http.Request, p *principal) string {
+	if p != nil && p.kind == contract.TokenShare && p.token.ShareLinkID != "" {
+		return "runs:" + p.token.ShareLinkID
+	}
+	return s.limitKey(r, p)
+}

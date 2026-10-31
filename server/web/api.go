@@ -143,7 +143,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, p *principal) 
 		writeErr(w, contract.Errf(contract.ErrForbidden, "the host must approve guest runs on this map"))
 		return
 	}
-	if err := s.limits.Allow(share.LimitRuns, s.limitKey(r, p)); err != nil {
+	if err := s.limits.Allow(share.LimitRuns, s.runLimitKey(r, p)); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -167,6 +167,11 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, p *principal) 
 
 func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request, p *principal) {
 	mapID := r.PathValue("map")
+	pt, err := s.participant(p, r, mapID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
 	if err := s.limits.Allow(share.LimitAssets, s.limitKey(r, p)); err != nil {
 		writeErr(w, err)
 		return
@@ -198,11 +203,6 @@ func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request, p *principa
 		return
 	}
 	a, err := s.svc.Store.StoreBlob(data, mime)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	pt, err := s.participant(p, r, mapID)
 	if err != nil {
 		writeErr(w, err)
 		return

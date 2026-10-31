@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
+
 	"kandev-plugin-mindmap/server/app"
 	"kandev-plugin-mindmap/server/contract"
 	"kandev-plugin-mindmap/server/share"
@@ -41,6 +43,9 @@ type Server struct {
 	links    *share.Links
 	limits   *share.Limiter
 
+	shareMu    sync.Mutex
+	shareConns map[string]map[*websocket.Conn]struct{}
+
 	mu   sync.Mutex
 	http *http.Server
 	ln   net.Listener
@@ -53,6 +58,7 @@ func New(svc *app.Service, d *tools.Dispatcher) *Server {
 	links, err := share.NewLinks(svc.Store, share.NewManager())
 	if err == nil && links != nil {
 		links.Port = svc.Port
+		links.OnStop = s.closeShareConns
 		s.links = links
 	}
 	s.mux = s.routes()
@@ -65,6 +71,7 @@ func (s *Server) SetShare(l *share.Links, lim *share.Limiter) {
 		if l.Port == nil {
 			l.Port = s.svc.Port
 		}
+		l.OnStop = s.closeShareConns
 		s.links = l
 	}
 	if lim != nil {

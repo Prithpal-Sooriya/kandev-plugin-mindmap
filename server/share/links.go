@@ -19,6 +19,10 @@ type Links struct {
 	Secrets *Secrets
 	// Port is the loopback port the tunnel forwards to.
 	Port func() int
+	// OnStop closes live connections for a share link. stopRow calls it
+	// while Links.mu is held, so the hook must not call back into Links.
+	// Rotate, stop, and kill all go through stopRow.
+	OnStop func(shareLinkID string)
 
 	mu sync.Mutex
 }
@@ -180,6 +184,9 @@ func (l *Links) ensureAndView(ctx context.Context, row store.ShareRow) (contract
 }
 
 func (l *Links) stopRow(row store.ShareRow) error {
+	if l.OnStop != nil {
+		l.OnStop(row.ID)
+	}
 	if err := l.Store.RevokeShareLinkTokens(row.ID); err != nil {
 		return err
 	}

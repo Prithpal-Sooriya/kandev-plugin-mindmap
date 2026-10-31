@@ -71,7 +71,51 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, p *principal) 
 			fromCookie = &pt
 		}
 	}
-	go s.serveConn(conn, p, mapID, fromCookie, s.limitKey(r, p))
+	go func() {
+		if p.kind == contract.TokenShare && p.token.ShareLinkID != "" {
+			s.trackShareConn(p.token.ShareLinkID, conn)
+			defer s.untrackShareConn(p.token.ShareLinkID, conn)
+		}
+		s.serveConn(conn, p, mapID, fromCookie, s.limitKey(r, p))
+	}()
+}
+
+func (s *Server) trackShareConn(linkID string, conn *websocket.Conn) {
+	s.shareMu.Lock()
+	defer s.shareMu.Unlock()
+	if s.shareConns == nil {
+		s.shareConns = map[string]map[*websocket.Conn]struct{}{}
+	}
+	set := s.shareConns[linkID]
+	if set == nil {
+		set = map[*websocket.Conn]struct{}{}
+		s.shareConns[linkID] = set
+	}
+	set[conn] = struct{}{}
+}
+
+func (s *Server) untrackShareConn(linkID string, conn *websocket.Conn) {
+	s.shareMu.Lock()
+	defer s.shareMu.Unlock()
+	delete(s.shareConns[linkID], conn)
+	if len(s.shareConns[linkID]) == 0 {
+		delete(s.shareConns, linkID)
+	}
+}
+
+// closeShareConns drops every socket bound to a share link. stopRow calls
+// it on rotate, stop, and kill. Host sockets are not registered here.
+func (s *Server) closeShareConns(linkID string) {
+	s.shareMu.Lock()
+	set := s.shareConns[linkID]
+	conns := make([]*websocket.Conn, 0, len(set))
+	for c := range set {
+		conns = append(conns, c)
+	}
+	s.shareMu.Unlock()
+	for _, c := range conns {
+		_ = c.Close()
+	}
 }
 
 func writeFrame(conn *websocket.Conn, m contract.Message) error {
@@ -111,6 +155,11 @@ func (s *Server) helloParticipant(p *principal, mapID string, h *contract.HelloP
 	}
 	if fromCookie != nil && fromCookie.MapID == mapID && !fromCookie.IsHost {
 		return *fromCookie, nil
+	}
+	if p.kind == contract.TokenShare && p.token.ShareLinkID != "" && s.limits != nil {
+		if err := s.limits.Allow(share.LimitJoins, "joins:"+p.token.ShareLinkID); err != nil {
+			return contract.Participant{}, err
+		}
 	}
 	pt, err := s.svc.Store.CreateGuest(mapID, h.Name, h.Color)
 	if err == nil {

@@ -53,5 +53,6 @@ const (
 	APIBurst           = 60
 	RunStartsPerMin    = 10
 	AssetUploadsPerMin = 20
+	GuestJoinsPerMin   = 10 // new guest sessions minted per share link
 	GuestIdleTTL       = 30 * 24 * time.Hour
 )

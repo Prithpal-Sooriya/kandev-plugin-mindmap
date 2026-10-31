@@ -499,7 +499,254 @@ type stopHook struct{ n int }
 
 func (h *stopHook) StopAllRuns(context.Context) error { h.n++; return nil }
 
+func shareRaw(link contract.ShareLink) string {
+	u := strings.TrimRight(link.URL, "/")
+	return u[strings.LastIndex(u, "/")+1:]
+}
+
+func TestRotateClosesGuestSocket(t *testing.T) {
+	e := newEnv(t)
+	e.useTunnel(t, fakeTunnel(t))
+	old := shareRaw(e.shareMap())
+	host := e.dial("host-stays")
+	u := "ws" + strings.TrimPrefix(e.http.URL, "http") + "/m/" + old + "/ws?map_id=" + e.m.ID
+	conn, resp, err := websocket.DefaultDialer.Dial(u, nil)
+	if err != nil {
+		t.Fatalf("dial: %v (%v)", err, resp)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	guest := &wsClient{t: t, conn: conn}
+	guest.send(contract.MsgHello, &contract.HelloPayload{Contract: 1, ClientID: "guest-old", Name: "Ada", Color: "#3b82f6"})
+	if m := guest.read(); m.Type != contract.MsgWelcome {
+		t.Fatalf("welcome %s", m.Type)
+	}
+	if m := guest.read(); m.Type != contract.MsgSnapshot {
+		t.Fatalf("snapshot %s", m.Type)
+	}
+
+	respHTTP, body := e.do("POST", "/m/"+e.token+"/api/maps/"+e.m.ID+"/share/rotate", map[string]any{}, nil)
+	if respHTTP.StatusCode != 200 {
+		t.Fatalf("rotate: %d %s", respHTTP.StatusCode, body)
+	}
+	var next contract.ShareLink
+	if err := json.Unmarshal(body, &next); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	closed := false
+	for time.Now().Before(deadline) {
+		_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		if _, _, rerr := conn.ReadMessage(); rerr != nil {
+			closed = true
+			break
+		}
+	}
+	if !closed {
+		t.Fatal("old socket stayed open after rotate")
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
+	if werr := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"ping","payload":{"nonce":"after"}}`)); werr == nil {
+		_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+		if _, _, rerr := conn.ReadMessage(); rerr == nil {
+			t.Fatal("old socket accepted a frame after rotate")
+		}
+	}
+	got, gotBody := e.do("GET", "/m/"+old+"/api/maps/"+e.m.ID+"/snapshot", nil, nil)
+	if got.StatusCode != 404 || len(gotBody) != 0 {
+		t.Fatalf("old token: %d %q", got.StatusCode, gotBody)
+	}
+	if id := e.dialShare(shareRaw(next), "", "guest-new", ""); id == "" || id == e.host.ID {
+		t.Fatalf("new token guest %s", id)
+	}
+	host.send(contract.MsgPing, &contract.PingPayload{Nonce: "still-here"})
+	if m := host.read(); m.Type != contract.MsgPong {
+		t.Fatalf("host socket: %s", m.Type)
+	}
+}
+
+func TestRejoinDoesNotResetRunLimit(t *testing.T) {
+	e := newEnv(t)
+	e.useTunnel(t, fakeTunnel(t))
+	raw := shareRaw(e.shareMap())
+	e.srv.SetShare(nil, share.NewLimiter(share.LimitConfig{
+		OpsRate: 100, OpsBurst: 100,
+		APIRate: 100, APIBurst: 100,
+		RunRate: 0.001, RunBurst: 2,
+		AssetRate: 100, AssetBurst: 10,
+		JoinRate: 100, JoinBurst: 20,
+	}))
+	start := func(cookie string) (int, []byte) {
+		t.Helper()
+		resp, body := e.do("POST", "/m/"+raw+"/api/maps/"+e.m.ID+"/runs", contract.StartRunRequest{
+			NodeID: e.m.RootID, Template: contract.TemplateResearch,
+		}, map[string]string{"Cookie": cookie})
+		return resp.StatusCode, body
+	}
+	var cookies []string
+	for i := 0; i < 3; i++ {
+		resp, body := e.do("POST", "/m/"+raw+"/api/join", map[string]any{"name": "Ada", "color": "#3b82f6"}, nil)
+		if resp.StatusCode != 200 {
+			t.Fatalf("join %d: %d %s", i, resp.StatusCode, body)
+		}
+		if len(resp.Cookies()) == 0 {
+			t.Fatal("no cookie")
+		}
+		ck := resp.Cookies()[0]
+		cookies = append(cookies, ck.Name+"="+ck.Value)
+	}
+	for i := 0; i < 2; i++ {
+		if status, body := start(cookies[0]); status != 200 {
+			t.Fatalf("run %d: %d %s", i, status, body)
+		}
+	}
+	if status, body := start(cookies[0]); status != 429 || errCode(t, body) != contract.ErrRateLimited {
+		t.Fatalf("third run: %d %s", status, body)
+	}
+	for i, c := range cookies[1:] {
+		status, body := start(c)
+		if status != 429 || errCode(t, body) != contract.ErrRateLimited {
+			t.Fatalf("rejoin %d started a run past the cap: %d %s", i, status, body)
+		}
+	}
+}
+
+func TestJoinMintIsCappedPerLink(t *testing.T) {
+	e := newEnv(t)
+	e.useTunnel(t, fakeTunnel(t))
+	raw := shareRaw(e.shareMap())
+	e.srv.SetShare(nil, share.NewLimiter(share.LimitConfig{
+		OpsRate: 100, OpsBurst: 100,
+		APIRate: 100, APIBurst: 100,
+		RunRate: 100, RunBurst: 10,
+		AssetRate: 100, AssetBurst: 10,
+		JoinRate: 0.001, JoinBurst: 2,
+	}))
+	var cookie string
+	for i := 0; i < 2; i++ {
+		resp, body := e.do("POST", "/m/"+raw+"/api/join", map[string]any{"name": "Ada", "color": "#3b82f6"}, nil)
+		if resp.StatusCode != 200 {
+			t.Fatalf("join %d: %d %s", i, resp.StatusCode, body)
+		}
+		if i == 0 {
+			ck := resp.Cookies()[0]
+			cookie = ck.Name + "=" + ck.Value
+		}
+	}
+	resp, body := e.do("POST", "/m/"+raw+"/api/join", map[string]any{"name": "Bea", "color": "#22c55e"}, nil)
+	if resp.StatusCode != 429 || errCode(t, body) != contract.ErrRateLimited {
+		t.Fatalf("third mint: %d %s", resp.StatusCode, body)
+	}
+	resp, body = e.do("POST", "/m/"+raw+"/api/join", map[string]any{"name": "Ada", "color": "#3b82f6"}, map[string]string{"Cookie": cookie})
+	if resp.StatusCode != 200 {
+		t.Fatalf("cookie rejoin should not mint: %d %s", resp.StatusCode, body)
+	}
+}
+
+func TestSharedMapClampsGuestBudget(t *testing.T) {
+	e := newEnv(t)
+	huge := &contract.Budget{MaxMinutes: 100000, MaxSubagents: 500}
+	if err := e.svc.CheckRunCaps(e.m.ID, huge, 5); err != nil {
+		t.Fatalf("unshared map should stay unlimited: %v", err)
+	}
+	e.useTunnel(t, fakeTunnel(t))
+	raw := shareRaw(e.shareMap())
+	if err := e.svc.CheckRunCaps(e.m.ID, nil, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.CheckRunCaps(e.m.ID, nil, 5); err == nil || contract.AsError(err).Code != contract.ErrBudgetExceeded {
+		t.Fatalf("shared default concurrency: %v", err)
+	}
+	resp, body := e.do("POST", "/m/"+raw+"/api/join", map[string]any{"name": "Ada", "color": "#3b82f6"}, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("join: %d %s", resp.StatusCode, body)
+	}
+	cookie := resp.Cookies()[0].Name + "=" + resp.Cookies()[0].Value
+	start := func() contract.Run {
+		t.Helper()
+		resp, body := e.do("POST", "/m/"+raw+"/api/maps/"+e.m.ID+"/runs", contract.StartRunRequest{
+			NodeID: e.m.RootID, ProfileID: "prof-guest", Template: contract.TemplateResearch, Budget: huge,
+		}, map[string]string{"Cookie": cookie})
+		if resp.StatusCode != 200 {
+			t.Fatalf("run: %d %s", resp.StatusCode, body)
+		}
+		var out contract.StartRunsResponse
+		if err := json.Unmarshal(body, &out); err != nil || len(out.Runs) != 1 {
+			t.Fatalf("runs: %s", body)
+		}
+		return out.Runs[0]
+	}
+	run := start()
+	if run.ProfileID != "prof-guest" {
+		t.Fatalf("profile %s", run.ProfileID)
+	}
+	if run.Budget.MaxMinutes != store.DefaultBudget.MaxMinutes || run.Budget.MaxSubagents != store.DefaultBudget.MaxSubagents {
+		t.Fatalf("budget not clamped: %+v", run.Budget)
+	}
+	resp, body = e.do("PUT", "/m/"+e.token+"/api/settings/share", contract.ShareSettings{
+		Provider: contract.ShareCloudflared, MaxMinutes: 90, MaxSubagents: 8,
+	}, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("settings: %d %s", resp.StatusCode, body)
+	}
+	run = start()
+	if run.Budget.MaxMinutes != 90 || run.Budget.MaxSubagents != 8 || run.ProfileID != "prof-guest" {
+		t.Fatalf("host cap not applied: %+v profile %s", run.Budget, run.ProfileID)
+	}
+}
+
+func TestUnauthenticatedUploadWritesNothing(t *testing.T) {
+	e := newEnv(t)
+	e.useTunnel(t, fakeTunnel(t))
+	raw := shareRaw(e.shareMap())
+	before := blobCount(t, e.st.DataDir())
+	status, body := e.uploadAs(raw, "", pngBytes(32), "image/png", "dot.png")
+	if status != 400 || errCode(t, body) != contract.ErrBadRequest {
+		t.Fatalf("guest upload: %d %s", status, body)
+	}
+	if n := blobCount(t, e.st.DataDir()); n != before {
+		t.Fatalf("rejected upload wrote %d blobs, had %d", n, before)
+	}
+	resp, body := e.do("POST", "/m/"+raw+"/api/join", map[string]any{"name": "Ada", "color": "#3b82f6"}, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("join: %d %s", resp.StatusCode, body)
+	}
+	cookie := resp.Cookies()[0].Name + "=" + resp.Cookies()[0].Value
+	status, body = e.uploadAs(raw, cookie, pngBytes(32), "image/png", "dot.png")
+	if status != 200 {
+		t.Fatalf("joined upload: %d %s", status, body)
+	}
+	if n := blobCount(t, e.st.DataDir()); n != before+1 {
+		t.Fatalf("joined upload blobs %d, want %d", n, before+1)
+	}
+}
+
+func blobCount(t *testing.T, dir string) int {
+	t.Helper()
+	root := filepath.Join(dir, "assets")
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return 0
+	}
+	n := 0
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			n++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 func (e *env) upload(data []byte, mime, name string) (int, []byte) {
+	return e.uploadAs(e.token, "", data, mime, name)
+}
+
+func (e *env) uploadAs(token, cookie string, data []byte, mime, name string) (int, []byte) {
 	e.t.Helper()
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
@@ -517,11 +764,14 @@ func (e *env) upload(data []byte, mime, name string) (int, []byte) {
 		e.t.Fatal(err)
 	}
 	_ = w.Close()
-	req, err := http.NewRequest(http.MethodPost, e.http.URL+"/m/"+e.token+"/api/maps/"+e.m.ID+"/assets", &buf)
+	req, err := http.NewRequest(http.MethodPost, e.http.URL+"/m/"+token+"/api/maps/"+e.m.ID+"/assets", &buf)
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		e.t.Fatal(err)

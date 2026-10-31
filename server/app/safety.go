@@ -30,6 +30,21 @@ func (s *Service) CheckRunCaps(mapID string, requested *contract.Budget, extra i
 	if err != nil {
 		return err
 	}
+	caps, err := s.runCaps(m)
+	if err != nil {
+		return err
+	}
+	return share.CheckRunCaps(active, extra, resolveBudget(requested, m.Settings.DefaultBudget), caps)
+}
+
+// runCaps is the map ceiling. A shared map with nothing set by the host
+// gets a non-zero default concurrency and budget; an unshared map stays
+// unlimited where the settings are zero.
+func (s *Service) runCaps(m contract.Map) (share.RunCaps, error) {
+	_, shared, err := s.Store.LiveShare(m.ID)
+	if err != nil {
+		return share.RunCaps{}, err
+	}
 	cfg := share.LoadSettings(s.Store)
 	caps := share.RunCaps{
 		MaxConcurrent: share.Tighter(m.Settings.MaxConcurrentRun, cfg.MaxConcurrentRuns),
@@ -40,7 +55,34 @@ func (s *Service) CheckRunCaps(mapID string, requested *contract.Budget, extra i
 			MaxMinutes:   share.Tighter(budgetField(m.Settings.DefaultBudget).MaxMinutes, cfg.MaxMinutes),
 		},
 	}
-	return share.CheckRunCaps(active, extra, resolveBudget(requested, m.Settings.DefaultBudget), caps)
+	return share.FillSharedDefaults(caps, shared, store.DefaultBudget), nil
+}
+
+// clampGuestBudget lowers a guest's requested budget to the shared-map
+// ceiling. The host's own runs are left alone. Profiles are not touched.
+func (s *Service) clampGuestBudget(nr store.NewRun) (store.NewRun, error) {
+	if nr.StartedBy == "" || nr.ParentRunID != "" {
+		return nr, nil
+	}
+	pt, err := s.Store.GetParticipant(nr.StartedBy)
+	if err != nil || pt.IsHost || pt.Kind != contract.ParticipantHuman {
+		return nr, nil
+	}
+	m, err := s.Store.GetMap(nr.MapID)
+	if err != nil {
+		return nr, err
+	}
+	caps, err := s.runCaps(m)
+	if err != nil {
+		return nr, err
+	}
+	if caps.MaxBudget == (contract.Budget{}) {
+		return nr, nil
+	}
+	resolved := resolveBudget(nr.Budget, m.Settings.DefaultBudget)
+	clamped := share.ClampBudget(resolved, caps.MaxBudget)
+	nr.Budget = &clamped
+	return nr, nil
 }
 
 // GuestRunNeedsApproval reports whether this participant's run must wait for

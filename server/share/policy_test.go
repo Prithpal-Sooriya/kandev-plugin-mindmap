@@ -31,6 +31,26 @@ func TestCheckRunCaps(t *testing.T) {
 	}
 }
 
+func TestSharedDefaultsAndClamp(t *testing.T) {
+	fallback := contract.Budget{MaxDepth: 4, MaxNodes: 60, MaxSubagents: 4, MaxMinutes: 30}
+	filled := FillSharedDefaults(RunCaps{}, true, fallback)
+	if filled.MaxConcurrent != SharedDefaultConcurrent || filled.MaxBudget != fallback {
+		t.Fatalf("shared defaults: %+v", filled)
+	}
+	if got := FillSharedDefaults(RunCaps{}, false, fallback); got.MaxConcurrent != 0 || got.MaxBudget != (contract.Budget{}) {
+		t.Fatalf("unshared stays unlimited: %+v", got)
+	}
+	host := RunCaps{MaxConcurrent: 2, MaxBudget: contract.Budget{MaxMinutes: 90, MaxSubagents: 8}}
+	kept := FillSharedDefaults(host, true, fallback)
+	if kept.MaxConcurrent != 2 || kept.MaxBudget.MaxMinutes != 90 || kept.MaxBudget.MaxSubagents != 8 || kept.MaxBudget.MaxNodes != 60 {
+		t.Fatalf("host cap overwritten: %+v", kept)
+	}
+	clamped := ClampBudget(contract.Budget{MaxMinutes: 100000, MaxSubagents: 500, MaxNodes: 10}, filled.MaxBudget)
+	if clamped.MaxMinutes != 30 || clamped.MaxSubagents != 4 || clamped.MaxNodes != 10 {
+		t.Fatalf("clamp: %+v", clamped)
+	}
+}
+
 func TestTighter(t *testing.T) {
 	if Tighter(0, 4) != 4 || Tighter(3, 0) != 3 || Tighter(2, 5) != 2 || Tighter(9, 4) != 4 {
 		t.Fatalf("tighter %d %d %d %d", Tighter(0, 4), Tighter(3, 0), Tighter(2, 5), Tighter(9, 4))

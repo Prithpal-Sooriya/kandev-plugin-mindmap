@@ -84,5 +84,13 @@ func (s *Secrets) flush() error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	// WriteFile leaves the mode of an existing file alone, and a reused
+	// temp file would otherwise be renamed into place with that mode.
+	if err := os.Chmod(tmp, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		return err
+	}
+	return os.Chmod(s.path, 0o600)
 }

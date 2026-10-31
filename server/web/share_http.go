@@ -147,6 +147,12 @@ func (s *Server) joinGuest(w http.ResponseWriter, r *http.Request, p *principal)
 		writeErr(w, contract.FieldErr(contract.ErrBadRequest, "name", "required"))
 		return
 	}
+	if s.limits != nil {
+		if err := s.limits.Allow(share.LimitJoins, "joins:"+p.token.ShareLinkID); err != nil {
+			writeErr(w, err)
+			return
+		}
+	}
 	pt, err := s.svc.Store.CreateGuest(p.token.MapID, body.Name, body.Color)
 	if err != nil {
 		writeErr(w, err)

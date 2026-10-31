@@ -131,10 +131,18 @@ func TestEnsureIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	deadline := time.Now().Add(2 * time.Second)
+	for readCount(count) < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if readCount(count) != 1 {
+		t.Fatalf("first spawn count %d", readCount(count))
+	}
 	b, err := m.Ensure(ctx, contract.ShareCloudflared, 9)
 	if err != nil {
 		t.Fatal(err)
 	}
+	time.Sleep(200 * time.Millisecond)
 	if a != b || readCount(count) != 1 {
 		t.Fatalf("origin %s %s count %d", a, b, readCount(count))
 	}
@@ -196,6 +204,13 @@ func writeFake(t *testing.T, dir string) {
 if [ -n "${MM_ARGV:-}" ]; then
   printf '%s\n' "$@" > "$MM_ARGV"
 fi
+# Count before the URL line. Ensure returns as soon as it scans the URL,
+# so a count written afterwards races the test.
+if [ -n "${MM_COUNT:-}" ]; then
+  n=0
+  if [ -f "$MM_COUNT" ]; then n=$(cat "$MM_COUNT" 2>/dev/null || echo 0); fi
+  echo $((n + 1)) > "$MM_COUNT"
+fi
 echo "https://${MM_HOST:-demo.trycloudflare.com}"
 if [ -n "${MM_GRAND:-}" ]; then
   sleep 120 &
@@ -203,11 +218,6 @@ if [ -n "${MM_GRAND:-}" ]; then
 fi
 if [ -n "${MM_PID:-}" ]; then
   echo $$ > "$MM_PID"
-fi
-if [ -n "${MM_COUNT:-}" ]; then
-  n=0
-  if [ -f "$MM_COUNT" ]; then n=$(cat "$MM_COUNT" 2>/dev/null || echo 0); fi
-  echo $((n + 1)) > "$MM_COUNT"
 fi
 if [ "${MM_EXIT:-}" = "1" ]; then
   exit 0

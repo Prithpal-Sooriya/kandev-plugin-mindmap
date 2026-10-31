@@ -16,7 +16,12 @@ const (
 	LimitAPI
 	LimitRuns
 	LimitAssets
+	LimitJoins
 )
+
+// IdleBucketTTL is how long an unused session keeps its buckets. After
+// this, the next Allow drops it so the map cannot grow without bound.
+const IdleBucketTTL = 15 * time.Minute
 
 // LimitConfig is the sustained rate (tokens per second) and burst of each bucket.
 type LimitConfig struct {
@@ -24,6 +29,7 @@ type LimitConfig struct {
 	APIRate, APIBurst     float64
 	RunRate, RunBurst     float64
 	AssetRate, AssetBurst float64
+	JoinRate, JoinBurst   float64
 }
 
 // DefaultLimits are the protocol §2 caps.
@@ -33,6 +39,7 @@ func DefaultLimits() LimitConfig {
 		APIRate: contract.APIPerSec, APIBurst: contract.APIBurst,
 		RunRate: float64(contract.RunStartsPerMin) / 60, RunBurst: contract.RunStartsPerMin,
 		AssetRate: float64(contract.AssetUploadsPerMin) / 60, AssetBurst: contract.AssetUploadsPerMin,
+		JoinRate: float64(contract.GuestJoinsPerMin) / 60, JoinBurst: contract.GuestJoinsPerMin,
 	}
 }
 
@@ -48,7 +55,8 @@ type Limiter struct {
 }
 
 type buckets struct {
-	ops, api, runs, assets *bucket
+	ops, api, runs, assets, joins *bucket
+	used                          time.Time
 }
 
 type bucket struct {
@@ -81,8 +89,10 @@ func (l *Limiter) AllowN(kind LimitKind, session string, n int) error {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	b := l.bucket(session, kind)
-	ok, retry := b.take(float64(n), l.now())
+	now := l.now()
+	l.sweep(now)
+	b := l.bucket(session, kind, now)
+	ok, retry := b.take(float64(n), now)
 	if ok {
 		return nil
 	}
@@ -93,7 +103,22 @@ func (l *Limiter) AllowN(kind LimitKind, session string, n int) error {
 	return &contract.Error{Code: contract.ErrRateLimited, Message: "slow down", RetryMS: ms}
 }
 
-func (l *Limiter) bucket(session string, kind LimitKind) *bucket {
+// Sessions is the number of live buckets. Tests use it to see eviction.
+func (l *Limiter) Sessions() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.sessions)
+}
+
+func (l *Limiter) sweep(now time.Time) {
+	for k, s := range l.sessions {
+		if s.used.IsZero() || now.Sub(s.used) >= IdleBucketTTL {
+			delete(l.sessions, k)
+		}
+	}
+}
+
+func (l *Limiter) bucket(session string, kind LimitKind, now time.Time) *bucket {
 	s := l.sessions[session]
 	if s == nil {
 		s = &buckets{
@@ -101,9 +126,11 @@ func (l *Limiter) bucket(session string, kind LimitKind) *bucket {
 			api:    newBucket(l.cfg.APIRate, l.cfg.APIBurst),
 			runs:   newBucket(l.cfg.RunRate, l.cfg.RunBurst),
 			assets: newBucket(l.cfg.AssetRate, l.cfg.AssetBurst),
+			joins:  newBucket(l.cfg.JoinRate, l.cfg.JoinBurst),
 		}
 		l.sessions[session] = s
 	}
+	s.used = now
 	switch kind {
 	case LimitAPI:
 		return s.api
@@ -111,6 +138,8 @@ func (l *Limiter) bucket(session string, kind LimitKind) *bucket {
 		return s.runs
 	case LimitAssets:
 		return s.assets
+	case LimitJoins:
+		return s.joins
 	default:
 		return s.ops
 	}
