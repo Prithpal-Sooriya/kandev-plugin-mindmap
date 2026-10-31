@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "bundle:ui": "esbuild ui/src/register.tsx --bundle --format=esm --target=es2022 --jsx=transform --jsx-factory=h --jsx-fragment=Fragment --outfile=ui/bundle.js --legal-comments=none",
     "build:ui": "npm run typecheck && npm run bundle:ui",
-    "test:ui": "vitest run tests",
+    "test:ui": "vitest run --dir tests",
     "sync:tools": "node scripts/sync-manifest-tools.mjs",
     "check:tools": "node scripts/sync-manifest-tools.mjs --check"
   },
