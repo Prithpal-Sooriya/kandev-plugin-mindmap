@@ -1,6 +1,6 @@
 id: "kandev-plugin-mindmap"
 api_version: 1
-version: "0.0.1"
+version: "0.1.0"
 display_name: "Mind Map"
 description: "An agentic, multiplayer mind map: you and your agents branch out, research, reorganise and compile docs together."
 author: "Prithpal-Sooriya"
@@ -22,6 +22,7 @@ capabilities:
   events:
     - "task_session.state_changed"
     - "message.added"
+    - "message.updated"
     - "agent.completed"
     - "agent.failed"
 
@@ -1030,42 +1031,30 @@ agent_tools:
       }
 # END generated agent_tools
 
-# All spike webhooks are authenticated (Kandev identity required).
+# All webhooks are authenticated (Kandev identity required). See docs/protocol.md §3.
 webhooks:
-  - key: "debug-launch"
-    description: "POST {agent_profile_id, prompt?, workspace_id?}: creates and launches a task via Host.Tasks().Create."
+  - key: "session"
+    description: "POST {map_id?}: issues a local token (mml1) and the loopback base URL for the in-Kandev UI."
     method: "POST"
     access: authenticated
-    max_body_bytes: 1048576
-  - key: "probe"
-    description: "GET: listener port, subprocess probe, sqlite probe, cloudflared lookup."
+  - key: "asset"
+    description: "GET ?map_id=&id=: asset bytes (the desktop CSP blocks loopback images)."
     method: "GET"
     access: authenticated
-  - key: "agent-profiles"
-    description: "GET: agent profiles via Host.AgentProfiles().List."
+  - key: "sync"
+    description: "GET ?map_id=&cursor=&wait=&subscribe=&client_id=: long-poll fallback, held at most 20 s."
     method: "GET"
     access: authenticated
-  - key: "logs"
-    description: "GET ?name=ping|events: tail of a spike log file."
-    method: "GET"
-    access: authenticated
-  - key: "hold"
-    description: "GET ?secs=N: holds the request open N seconds (long-poll ceiling probe)."
-    method: "GET"
-    access: authenticated
-  - key: "echo-size"
-    description: "POST: returns the received body length (webhook/gRPC size probe)."
+  - key: "submit"
+    description: "POST SubmitRequest ?map_id=: long-poll fallback submit; returns the ack/reject/rebase for the batch."
     method: "POST"
     access: authenticated
-    max_body_bytes: 16777216
-  - key: "tunnel-test"
-    description: "POST: if cloudflared is installed, runs a ~20s quick tunnel against the probe server."
+    max_body_bytes: 4194304
+  - key: "api"
+    description: "POST {method, path, body}: proxies one loopback /api/* call as the host (fallback when loopback is blocked)."
     method: "POST"
     access: authenticated
-  - key: "task-ops"
-    description: "POST {op: get|delete, task_id}: task inspection and plugin-owned tree deletion (cleanup of spike tasks)."
-    method: "POST"
-    access: authenticated
+    max_body_bytes: 4194304
 
 config_schema:
   type: object

@@ -3,7 +3,7 @@
 
 # BIN and VERSION must match manifest.yaml's id and version.
 BIN := bin/kandev-plugin-mindmap
-VERSION := 0.0.1
+VERSION := 0.1.0
 STAGE := .build/stage
 PKG_OUT := $(notdir $(BIN))-$(VERSION).tar.gz
 
@@ -17,14 +17,19 @@ PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 deps:
 	@test -d node_modules || npm install --no-audit --no-fund
 
-build:
+## The binary embeds server/web/dist (the standalone guest app), so the UI
+## bundles are built first.
+build: bundle
 	mkdir -p bin
 	CGO_ENABLED=0 go build -o $(BIN) ./server
 
 test: test-backend typecheck test-ui
 
+## -race, plus the 1,000-node load test without -race (the transpiled SQLite
+## is ~25x slower under the race detector, so its 1 s budget is enforced here).
 test-backend:
-	go test -race ./server/...
+	go test -race ./server/... ./contract/...
+	go test -count=1 -run 'TestLoad' ./server/store/
 
 test-ui: deps
 	npm run test:ui
@@ -33,16 +38,19 @@ typecheck: deps
 	npm run typecheck
 
 vet:
-	go vet ./server/...
+	go vet ./server/... ./contract/...
 
 fmt:
-	gofmt -w server
+	gofmt -w server contract
 
 check-format:
-	@out="$$(gofmt -l server)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+	@out="$$(gofmt -l server contract)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
+## ui/bundle.js (in-Kandev) and, once Phase 1b adds `build:web`, the
+## standalone guest app into server/web/dist/ (embedded by go:embed).
 bundle: deps
 	npm run build:ui
+	npm run build:web --if-present
 
 define stage_common
 	rm -rf $(STAGE)

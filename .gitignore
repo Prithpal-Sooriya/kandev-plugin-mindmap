@@ -3,3 +3,6 @@
 /node_modules/
 *.tar.gz
 /ui/bundle.js
+# Standalone guest app build output (make bundle); only the placeholder is tracked.
+/server/web/dist/*
+!/server/web/dist/index.html

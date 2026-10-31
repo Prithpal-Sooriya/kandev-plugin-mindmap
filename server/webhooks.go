@@ -1,214 +1,194 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/kandev/kandev/pkg/pluginsdk"
+
+	"kandev-plugin-mindmap/server/contract"
+	"kandev-plugin-mindmap/server/web"
 )
 
-func jsonResp(status int32, v any) (*pluginsdk.WebhookResponse, error) {
-	b, err := json.MarshalIndent(v, "", "  ")
+// localTokenTTL is the lifetime of an mml1 token from the session webhook.
+const localTokenTTL = 12 * time.Hour
+
+func jsonResp(status int, v any) (*pluginsdk.WebhookResponse, error) {
+	b, err := json.Marshal(v)
 	if err != nil {
 		return &pluginsdk.WebhookResponse{Status: 500, Body: []byte(err.Error())}, nil
 	}
-	return &pluginsdk.WebhookResponse{
-		Status:  status,
-		Headers: map[string]string{"Content-Type": "application/json"},
-		Body:    b,
-	}, nil
+	return &pluginsdk.WebhookResponse{Status: int32(status), Headers: map[string]string{"Content-Type": "application/json"}, Body: b}, nil
 }
 
-func errResp(status int32, msg string) (*pluginsdk.WebhookResponse, error) {
-	return jsonResp(status, map[string]any{"error": msg})
+func errResp(err error) (*pluginsdk.WebhookResponse, error) {
+	e := contract.AsError(err)
+	return jsonResp(e.Code.HTTPStatus(), contract.ErrorBody{Error: *e})
 }
 
-// HandleWebhook dispatches the authenticated spike webhooks.
+func header(h map[string]string, name string) string {
+	for k, v := range h {
+		if strings.EqualFold(k, name) {
+			return v
+		}
+	}
+	return ""
+}
+
+// HandleWebhook serves the Kandev-authenticated webhooks (protocol §3).
 func (p *mindmapPlugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookRequest) (*pluginsdk.WebhookResponse, error) {
+	if p.initErr != nil {
+		return errResp(contract.Errf(contract.ErrUnavailable, "mind map plugin failed to start: %v", p.initErr))
+	}
 	q, _ := url.ParseQuery(req.Query)
 	switch req.WebhookKey {
-	case "debug-launch":
-		return p.debugLaunch(ctx, req)
-	case "probe":
-		return p.probe(ctx)
-	case "agent-profiles":
-		return p.agentProfiles(ctx)
-	case "logs":
-		return p.readLog(q.Get("name"))
-	case "hold":
-		secs, _ := strconv.Atoi(q.Get("secs"))
-		start := time.Now()
-		select {
-		case <-time.After(time.Duration(secs) * time.Second):
-		case <-ctx.Done():
-			_ = p.appendLog("hold", map[string]any{"secs": secs, "cancelled_after": time.Since(start).String(), "err": ctx.Err().Error()})
-			return errResp(499, "ctx cancelled")
-		}
-		_ = p.appendLog("hold", map[string]any{"secs": secs, "completed_after": time.Since(start).String()})
-		return jsonResp(200, map[string]any{"held_secs": secs, "elapsed": time.Since(start).String()})
-	case "echo-size":
-		return jsonResp(200, map[string]any{"body_bytes": len(req.Body)})
-	case "tunnel-test":
-		return p.tunnelTest(ctx)
-	case "task-ops":
-		return p.taskOps(ctx, req)
+	case "session":
+		return p.session(req)
+	case "asset":
+		return p.asset(q)
+	case "sync":
+		return p.sync(ctx, q)
+	case "submit":
+		return p.submit(q, req.Body)
+	case "api":
+		return p.api(ctx, req.Body)
 	}
 	return &pluginsdk.WebhookResponse{Status: 404}, nil
 }
 
-func (p *mindmapPlugin) readLog(name string) (*pluginsdk.WebhookResponse, error) {
-	if name != "ping" && name != "events" && name != "hold" {
-		return errResp(400, "name must be ping|events|hold")
-	}
-	b, err := os.ReadFile(filepath.Join(p.dataDir, name+".log"))
-	if err != nil {
-		return errResp(404, err.Error())
-	}
-	return &pluginsdk.WebhookResponse{Status: 200, Headers: map[string]string{"Content-Type": "text/plain"}, Body: b}, nil
-}
-
-func (p *mindmapPlugin) agentProfiles(ctx context.Context) (*pluginsdk.WebhookResponse, error) {
-	host := p.Host()
-	if host == nil {
-		return errResp(503, "host not injected")
-	}
-	var all []pluginsdk.AgentProfile
-	page := pluginsdk.Page{Limit: 100}
-	for {
-		items, info, err := host.AgentProfiles().List(ctx, page)
-		if err != nil {
-			return errResp(500, err.Error())
-		}
-		all = append(all, items...)
-		if info == nil || !info.HasMore {
-			break
-		}
-		page.Cursor = info.NextCursor
-	}
-	return jsonResp(200, all)
-}
-
-type debugLaunchBody struct {
-	AgentProfileID string `json:"agent_profile_id"`
-	Prompt         string `json:"prompt"`
-	WorkspaceID    string `json:"workspace_id"`
-	Title          string `json:"title"`
-}
-
-const defaultSpikePrompt = `Call the kandev mindmap_ping tool with {"msg":"hello"} and reply with its output. Do nothing else.`
-
-// debugLaunch is the launch path the real plugin will use: Host.Tasks().Create
-// with Launch{AgentProfileID, Prompt}, StartAgent and plugin Metadata.
-func (p *mindmapPlugin) debugLaunch(ctx context.Context, req *pluginsdk.WebhookRequest) (*pluginsdk.WebhookResponse, error) {
-	host := p.Host()
-	if host == nil {
-		return errResp(503, "host not injected")
-	}
-	var body debugLaunchBody
-	if err := json.Unmarshal(req.Body, &body); err != nil || body.AgentProfileID == "" {
-		return errResp(400, "body must be JSON with agent_profile_id")
-	}
-	if body.Prompt == "" {
-		body.Prompt = defaultSpikePrompt
-	}
-	if body.Title == "" {
-		body.Title = "mindmap spike: ping via " + body.AgentProfileID
-	}
-	profile, prompt := body.AgentProfileID, body.Prompt
-	task, err := host.Tasks().Create(ctx, pluginsdk.CreateTaskInput{
-		WorkspaceID: body.WorkspaceID,
-		Title:       body.Title,
-		Description: "Phase 0 spike task. Safe to delete.",
-		StartAgent:  true,
-		Launch:      &pluginsdk.PluginTaskLaunchOptions{AgentProfileID: &profile, Prompt: &prompt},
-		Metadata:    map[string]any{"mindmap_id": "spike", "node_id": "spike", "run_id": "spike"},
-	})
-	if err != nil {
-		return errResp(500, err.Error())
-	}
-	_ = p.appendLog("launch", map[string]any{"task_id": task.ID, "profile": profile})
-	return jsonResp(200, task)
-}
-
-func (p *mindmapPlugin) taskOps(ctx context.Context, req *pluginsdk.WebhookRequest) (*pluginsdk.WebhookResponse, error) {
-	host := p.Host()
-	if host == nil {
-		return errResp(503, "host not injected")
-	}
+// session issues a local token for the in-Kandev UI.
+func (p *mindmapPlugin) session(req *pluginsdk.WebhookRequest) (*pluginsdk.WebhookResponse, error) {
 	var body struct {
-		Op     string `json:"op"`
-		TaskID string `json:"task_id"`
+		MapID string `json:"map_id,omitempty"`
 	}
-	if err := json.Unmarshal(req.Body, &body); err != nil || body.TaskID == "" {
-		return errResp(400, "body must be JSON {op, task_id}")
+	if len(bytes.TrimSpace(req.Body)) > 0 {
+		if err := contract.StrictUnmarshal(req.Body, &body); err != nil {
+			return errResp(contract.Errf(contract.ErrBadRequest, "body must be {map_id?}: %v", err))
+		}
 	}
-	switch body.Op {
-	case "get":
-		t, err := host.Tasks().Get(ctx, body.TaskID)
+	for _, h := range []string{"Origin", "X-Forwarded-Origin"} {
+		p.svc.AddOrigin(header(req.Headers, h))
+	}
+	if ref := header(req.Headers, "Referer"); ref != "" {
+		if u, err := url.Parse(ref); err == nil && u.Scheme != "" && u.Host != "" {
+			p.svc.AddOrigin(u.Scheme + "://" + u.Host)
+		}
+	}
+	pt := contract.Participant{Kind: contract.ParticipantHuman, Name: "Host", Color: "#4f7cff", IsHost: true}
+	if body.MapID != "" {
+		host, err := p.store.HostParticipant(body.MapID)
 		if err != nil {
-			return errResp(500, err.Error())
+			return errResp(err)
 		}
-		return jsonResp(200, t)
-	case "delete":
-		mgr, ok := pluginsdk.PluginOwnedTaskTrees(host)
-		if !ok {
-			return errResp(501, "host has no PluginOwnedTaskTrees extension")
-		}
-		ids, err := mgr.Delete(ctx, body.TaskID)
-		if err != nil {
-			return errResp(500, err.Error())
-		}
-		return jsonResp(200, map[string]any{"deleted": ids})
+		pt = host
 	}
-	return errResp(400, "op must be get|delete")
+	raw, info, err := p.store.IssueToken(contract.TokenLocal, 0, body.MapID, "", pt.ID, "", "", localTokenTTL)
+	if err != nil {
+		return errResp(err)
+	}
+	return jsonResp(200, contract.SessionResponse{Contract: contract.ContractVersion, BaseURL: p.web.BaseURL(), Token: raw,
+		MapID: body.MapID, ExpiresAt: info.ExpiresAt, Participant: pt})
 }
 
-// probe reports spike checks 3 and 7 (listener, subprocess, sqlite).
-func (p *mindmapPlugin) probe(ctx context.Context) (*pluginsdk.WebhookResponse, error) {
-	out := map[string]any{"data_dir": p.dataDir}
-	srv, err := p.ensureServer()
+// asset serves image bytes to the in-Kandev UI (the desktop CSP blocks
+// loopback images).
+func (p *mindmapPlugin) asset(q url.Values) (*pluginsdk.WebhookResponse, error) {
+	a, path, err := p.store.AssetFile(q.Get("map_id"), q.Get("id"))
 	if err != nil {
-		out["listen_error"] = err.Error()
-	} else {
-		out["listen_addr"] = srv.addr
-		out["port"] = srv.port
-		out["hello_url"] = "http://" + srv.addr + "/hello"
-		out["ws_url"] = "ws://" + srv.addr + "/ws"
+		return &pluginsdk.WebhookResponse{Status: 404}, nil
 	}
-	sub := map[string]any{}
-	if o, err := exec.CommandContext(ctx, "/bin/echo", "subprocess-ok").CombinedOutput(); err != nil {
-		sub["error"] = err.Error()
-	} else {
-		sub["echo"] = strings.TrimSpace(string(o))
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return &pluginsdk.WebhookResponse{Status: 404}, nil
 	}
-	if path, err := exec.LookPath("cloudflared"); err != nil {
-		sub["cloudflared"] = "not found: " + err.Error()
-	} else {
-		sub["cloudflared"] = path
+	h := map[string]string{"Content-Type": a.MIME, "Cache-Control": "private, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"}
+	if a.MIME == "image/svg+xml" {
+		h["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
 	}
-	out["subprocess"] = sub
-	out["sqlite"] = sqliteProbe(p.dataDir)
-	return jsonResp(200, out)
+	return &pluginsdk.WebhookResponse{Status: 200, Headers: h, Body: b}, nil
 }
 
-// tunnelTest starts a cloudflared quick tunnel at the probe server for ~20s,
-// fetches /hello through the public URL, and kills the tunnel. It does nothing
-// unless cloudflared is already installed.
-func (p *mindmapPlugin) tunnelTest(ctx context.Context) (*pluginsdk.WebhookResponse, error) {
-	path, err := exec.LookPath("cloudflared")
+// sync is the long-poll fallback, held at most contract.LongPollMaxHold
+// (Kandev kills webhook requests at 30 s).
+func (p *mindmapPlugin) sync(ctx context.Context, q url.Values) (*pluginsdk.WebhookResponse, error) {
+	mapID := q.Get("map_id")
+	host, err := p.store.HostParticipant(mapID)
 	if err != nil {
-		return jsonResp(200, map[string]any{"skipped": "cloudflared not installed"})
+		return errResp(err)
 	}
-	srv, err := p.ensureServer()
+	ctx, cancel := context.WithTimeout(ctx, contract.LongPollMaxHold+2*time.Second)
+	defer cancel()
+	res, err := web.Sync(ctx, p.svc, mapID, host, web.ParseSyncQuery(q.Get))
 	if err != nil {
-		return errResp(500, err.Error())
+		return errResp(err)
 	}
-	return jsonResp(200, runQuickTunnel(ctx, path, srv.addr, 20*time.Second))
+	return jsonResp(200, res)
+}
+
+func (p *mindmapPlugin) submit(q url.Values, body []byte) (*pluginsdk.WebhookResponse, error) {
+	mapID := q.Get("map_id")
+	var req contract.SubmitRequest
+	if err := contract.StrictUnmarshal(body, &req); err != nil {
+		return errResp(contract.AsError(err))
+	}
+	host, err := p.store.HostParticipant(mapID)
+	if err != nil {
+		return errResp(err)
+	}
+	res, err := web.Submit(p.svc, mapID, host, req)
+	if err != nil {
+		return errResp(err)
+	}
+	return jsonResp(200, res)
+}
+
+// apiRequest is the body of the `api` webhook.
+type apiRequest struct {
+	Method string          `json:"method"`
+	Path   string          `json:"path"`
+	Body   json.RawMessage `json:"body,omitempty"`
+}
+
+// api proxies one /api/* loopback call (protocol §4) for the in-Kandev
+// fallback path, acting as the host with an all-maps scope.
+func (p *mindmapPlugin) api(ctx context.Context, body []byte) (*pluginsdk.WebhookResponse, error) {
+	var req apiRequest
+	if err := contract.StrictUnmarshal(body, &req); err != nil {
+		return errResp(contract.Errf(contract.ErrBadRequest, "body must be {method, path, body?}: %v", err))
+	}
+	path := "/" + strings.TrimPrefix(req.Path, "/")
+	if !strings.HasPrefix(path, "/api/") || strings.Contains(path, "..") {
+		return errResp(contract.FieldErr(contract.ErrBadRequest, "path", "must start with /api/"))
+	}
+	method := strings.ToUpper(req.Method)
+	if method == "" {
+		method = http.MethodGet
+	}
+	var rb io.Reader
+	if len(req.Body) > 0 {
+		rb = bytes.NewReader(req.Body)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	hr, err := http.NewRequestWithContext(web.WithInternal(ctx), method, "http://127.0.0.1/m/"+web.InternalToken+path, rb)
+	if err != nil {
+		return errResp(contract.Errf(contract.ErrBadRequest, "%v", err))
+	}
+	hr.Host = "127.0.0.1"
+	hr.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	p.web.Handler().ServeHTTP(rec, hr)
+	h := map[string]string{}
+	if ct := rec.Header().Get("Content-Type"); ct != "" {
+		h["Content-Type"] = ct
+	}
+	return &pluginsdk.WebhookResponse{Status: int32(rec.Code), Headers: h, Body: rec.Body.Bytes()}, nil
 }
