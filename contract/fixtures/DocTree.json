@@ -1,0 +1,35 @@
+[
+  {
+    "map_id": "map_demo00000001",
+    "slug": "note-app",
+    "root_node_id": "nd_root00000001",
+    "single": {
+      "node_id": "nd_docsingle0001",
+      "title": "Launch a note-taking app",
+      "path": "note-app.md",
+      "words": 2400
+    },
+    "index": {
+      "node_id": "nd_docindex00001",
+      "title": "Overview",
+      "path": "index.md",
+      "words": 300,
+      "children": [
+        {
+          "node_id": "nd_doc0000000001",
+          "title": "Pricing",
+          "path": "pricing/index.md",
+          "words": 900,
+          "children": [
+            {
+              "node_id": "nd_doctiers00001",
+              "title": "Tiers",
+              "path": "pricing/tiers.md"
+            }
+          ]
+        }
+      ]
+    },
+    "exported_to": "~/Kandev/mindmaps/note-app"
+  }
+]

@@ -1,0 +1,43 @@
+{
+  "name": "claim",
+  "description": "Claim a node before you work on it, and release it when done. A claim shows your presence on the canvas and tells other agents in a swarm to leave that branch alone. If another participant holds the claim you get a claimed error: pick a different node. Claims expire after ttl_minutes; claim again to renew. Claim frontier nodes one or a few at a time, not the whole map.",
+  "annotations": {
+    "read_only_hint": false,
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "node_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "The node (and its subtree) to claim. Node id (nd_...) or an @ref you set earlier in this run."
+      },
+      "action": {
+        "type": "string",
+        "enum": [
+          "claim",
+          "release"
+        ],
+        "description": "Default claim."
+      },
+      "ttl_minutes": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 120,
+        "description": "Claim lifetime. Default 30."
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 300,
+        "description": "What you are doing there, shown on hover."
+      }
+    },
+    "required": [
+      "node_id"
+    ]
+  }
+}

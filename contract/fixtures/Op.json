@@ -1,0 +1,366 @@
+[
+  {
+    "id": "op_mapupdate00001",
+    "map_id": "map_demo00000001",
+    "rev": 2,
+    "type": "map.update",
+    "payload": {
+      "title": "Launch a note-taking app",
+      "repo_id": "",
+      "settings": {
+        "default_mode": "apply",
+        "default_profile_id": "profile-claude",
+        "default_budget": {
+          "max_depth": 3,
+          "max_nodes": 40,
+          "max_subagents": 4,
+          "max_minutes": 60
+        },
+        "max_concurrent_runs": 4,
+        "export_dir": "~/Kandev/mindmaps",
+        "require_guest_run_approval": true
+      }
+    },
+    "actor": {
+      "participant_id": "pt_host00000001"
+    },
+    "ts": "2026-10-01T12:00:00Z"
+  },
+  {
+    "id": "op_create00000001",
+    "map_id": "map_demo00000001",
+    "rev": 41,
+    "type": "node.create",
+    "payload": {
+      "node": {
+        "id": "nd_example00001",
+        "parent_id": "nd_pricing000001",
+        "order": "V",
+        "title": "Example Co: free tier with 3 notebooks",
+        "body_md": "Detail.",
+        "kind": "example",
+        "tags": [
+          "pricing"
+        ],
+        "confidence": 0.9,
+        "sources": [
+          {
+            "url": "https://example.com/pricing",
+            "title": "Example Co pricing",
+            "quote": "Free for up to 3 notebooks.",
+            "accessed_at": "2026-10-01T12:05:00Z"
+          }
+        ],
+        "status": "idle",
+        "color": "#22c55e",
+        "collapsed": true
+      }
+    },
+    "actor": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "batch_id": "bt_batch00000001",
+    "base_rev": 40,
+    "ts": "2026-10-01T12:05:00Z"
+  },
+  {
+    "id": "op_createq0000001",
+    "map_id": "map_demo00000001",
+    "rev": 0,
+    "type": "node.create",
+    "payload": {
+      "node": {
+        "id": "nd_question0001",
+        "parent_id": "nd_pricing000001",
+        "order": "k",
+        "title": "Which segment first?",
+        "kind": "question",
+        "question": {
+          "run_id": "run_research0001",
+          "options": [
+            "Students",
+            "Small teams"
+          ]
+        }
+      }
+    },
+    "actor": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    }
+  },
+  {
+    "id": "op_createdoc00001",
+    "map_id": "map_demo00000001",
+    "rev": 0,
+    "type": "node.create",
+    "payload": {
+      "node": {
+        "id": "nd_doc0000000001",
+        "parent_id": "nd_pricing000001",
+        "order": "s",
+        "title": "Pricing",
+        "kind": "doc",
+        "doc": {
+          "path": "pricing/index.md"
+        }
+      }
+    },
+    "actor": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "proposal_id": "prp_garden000001"
+  },
+  {
+    "id": "op_update00000001",
+    "map_id": "map_demo00000001",
+    "rev": 43,
+    "type": "node.update",
+    "payload": {
+      "id": "nd_pricing000001",
+      "set": {
+        "title": "Pricing model",
+        "body_md": "Freemium.",
+        "kind": "idea",
+        "tags": [
+          "pricing"
+        ],
+        "confidence": 0.7,
+        "status": "review",
+        "run_id": "run_research0001",
+        "color": "accent",
+        "collapsed": false,
+        "doc": {
+          "path": "pricing.md"
+        }
+      },
+      "clear": [
+        "color",
+        "confidence",
+        "run_id",
+        "body_md"
+      ],
+      "append_body": "More detail.",
+      "add_tags": [
+        "b2c"
+      ],
+      "remove_tags": [
+        "draft"
+      ],
+      "add_sources": [
+        {
+          "url": "https://example.com/pricing",
+          "title": "Example Co pricing",
+          "quote": "Free for up to 3 notebooks.",
+          "accessed_at": "2026-10-01T12:05:00Z"
+        }
+      ]
+    },
+    "actor": {
+      "participant_id": "pt_host00000001"
+    },
+    "base_rev": 42,
+    "ts": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "op_move000000001",
+    "map_id": "map_demo00000001",
+    "rev": 44,
+    "type": "node.move",
+    "payload": {
+      "id": "nd_example00001",
+      "parent_id": "nd_root00000001",
+      "order": "a"
+    },
+    "actor": {
+      "participant_id": "pt_host00000001"
+    },
+    "ts": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "op_delete0000001",
+    "map_id": "map_demo00000001",
+    "rev": 45,
+    "type": "node.delete",
+    "payload": {
+      "id": "nd_risk00000001"
+    },
+    "actor": {
+      "participant_id": "pt_host00000001"
+    },
+    "ts": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "op_restore000001",
+    "map_id": "map_demo00000001",
+    "rev": 46,
+    "type": "node.restore",
+    "payload": {
+      "id": "nd_risk00000001"
+    },
+    "actor": {
+      "participant_id": "pt_host00000001"
+    },
+    "ts": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "op_merge00000001",
+    "map_id": "map_demo00000001",
+    "rev": 0,
+    "type": "node.merge",
+    "payload": {
+      "into_id": "nd_pricing000001",
+      "ids": [
+        "nd_risk00000001"
+      ]
+    },
+    "actor": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "proposal_id": "prp_garden000001"
+  },
+  {
+    "id": "op_claim00000001",
+    "map_id": "map_demo00000001",
+    "rev": 47,
+    "type": "node.claim",
+    "payload": {
+      "id": "nd_pricing000001",
+      "claim": {
+        "participant_id": "pt_agent0000001",
+        "run_id": "run_research0001",
+        "note": "Researching",
+        "expires_at": "2026-10-01T12:30:00Z"
+      }
+    },
+    "actor": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "ts": "2026-10-01T12:05:00Z"
+  },
+  {
+    "id": "op_release000001",
+    "map_id": "map_demo00000001",
+    "rev": 48,
+    "type": "node.release",
+    "payload": {
+      "id": "nd_pricing000001"
+    },
+    "actor": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "ts": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "op_answer0000001",
+    "map_id": "map_demo00000001",
+    "rev": 49,
+    "type": "question.answer",
+    "payload": {
+      "node_id": "nd_question0001",
+      "answer": "Small teams"
+    },
+    "actor": {
+      "participant_id": "pt_guest0000001"
+    },
+    "ts": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "op_linkcreate001",
+    "map_id": "map_demo00000001",
+    "rev": 50,
+    "type": "link.create",
+    "payload": {
+      "link": {
+        "id": "ln_link00000001",
+        "from": "nd_example00001",
+        "to": "nd_question0001",
+        "label": "supports",
+        "reason": "Evidence."
+      }
+    },
+    "actor": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "ts": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "op_linkupdate001",
+    "map_id": "map_demo00000001",
+    "rev": 51,
+    "type": "link.update",
+    "payload": {
+      "id": "ln_link00000001",
+      "label": "contradicts",
+      "reason": "Changed my mind."
+    },
+    "actor": {
+      "participant_id": "pt_host00000001"
+    },
+    "ts": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "op_linkdelete001",
+    "map_id": "map_demo00000001",
+    "rev": 52,
+    "type": "link.delete",
+    "payload": {
+      "id": "ln_link00000001"
+    },
+    "actor": {
+      "participant_id": "pt_host00000001"
+    },
+    "ts": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "op_assetattach01",
+    "map_id": "map_demo00000001",
+    "rev": 53,
+    "type": "asset.attach",
+    "payload": {
+      "asset": {
+        "id": "as_shot00000001",
+        "node_id": "nd_example00001",
+        "kind": "image",
+        "mime": "image/png",
+        "bytes": 48213,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "filename": "pricing-page.png",
+        "caption": "Pricing page of an example competitor",
+        "source_url": "https://example.com/pricing",
+        "width": 1280,
+        "height": 800,
+        "author": {
+          "participant_id": "pt_agent0000001",
+          "run_id": "run_research0001"
+        },
+        "created_at": "2026-10-01T12:05:00Z"
+      }
+    },
+    "actor": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "ts": "2026-10-01T12:05:00Z"
+  },
+  {
+    "id": "op_assetdetach01",
+    "map_id": "map_demo00000001",
+    "rev": 54,
+    "type": "asset.detach",
+    "payload": {
+      "id": "as_shot00000001",
+      "node_id": "nd_example00001"
+    },
+    "actor": {
+      "participant_id": "pt_host00000001"
+    },
+    "ts": "2026-10-01T12:30:00Z"
+  }
+]

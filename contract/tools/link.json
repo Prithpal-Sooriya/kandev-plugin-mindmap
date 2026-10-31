@@ -1,0 +1,41 @@
+{
+  "name": "link",
+  "description": "Add a cross-link between two nodes in different branches, outside the tree. Use it when one idea supports, contradicts, depends on or is an example of another. Give a short label (e.g. contradicts, supports, depends on, example of) and a one-sentence reason. Do not link a node to its own parent or child; the tree already shows that.",
+  "annotations": {
+    "read_only_hint": false,
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "from_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Link source. Node id (nd_...) or an @ref you set earlier in this run."
+      },
+      "to_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Link target. Node id (nd_...) or an @ref you set earlier in this run."
+      },
+      "label": {
+        "type": "string",
+        "maxLength": 60,
+        "description": "Short relation, shown on the edge."
+      },
+      "reason": {
+        "type": "string",
+        "maxLength": 500,
+        "description": "Why they are related."
+      }
+    },
+    "required": [
+      "from_id",
+      "to_id",
+      "label"
+    ]
+  }
+}

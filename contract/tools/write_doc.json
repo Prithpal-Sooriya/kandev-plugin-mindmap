@@ -1,0 +1,60 @@
+{
+  "name": "write_doc",
+  "description": "Create or update a compiled document as a doc node. Use it in compile and synthesis runs: write one doc per branch, split into sub-docs (parent_doc_id) when a branch has about 8 or more children or more than about 1,500 words. Paths are relative markdown paths like index.md, pricing/index.md or pricing/tiers.md. Keep source citations as markdown links and link sibling docs by relative path. Pass doc_id to replace an existing doc.",
+  "annotations": {
+    "read_only_hint": false,
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "doc_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Existing doc node to replace. Omit to create."
+      },
+      "parent_doc_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Nest under this doc node. Default: under your run's node."
+      },
+      "title": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "Doc title."
+      },
+      "path": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "Relative .md path, no leading slash or .."
+      },
+      "body": {
+        "type": "string",
+        "maxLength": 65536,
+        "description": "Full markdown content."
+      },
+      "source_ids": {
+        "type": "array",
+        "maxItems": 500,
+        "items": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "description": "Nodes this doc was compiled from."
+      },
+      "ref": {
+        "type": "string",
+        "maxLength": 48,
+        "description": "Label for this doc node, usable later as @ref."
+      }
+    },
+    "required": [
+      "title",
+      "path",
+      "body"
+    ]
+  }
+}

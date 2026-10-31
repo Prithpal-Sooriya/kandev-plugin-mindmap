@@ -1,0 +1,44 @@
+{
+  "valid": [
+    {
+      "node_id": "nd_example00001",
+      "url": "https://example.com/a.png",
+      "caption": "c",
+      "source_url": "https://example.com"
+    },
+    {
+      "node_id": "nd_example00001",
+      "file_path": "/tmp/shot.png",
+      "filename": "shot.png"
+    },
+    {
+      "node_id": "nd_example00001",
+      "base64": "iVBORw0KGgo=",
+      "mime_type": "image/png"
+    }
+  ],
+  "invalid": [
+    {
+      "url": "https://example.com/a.png"
+    }
+  ],
+  "semantic": [
+    {
+      "node_id": "nd_example00001"
+    },
+    {
+      "node_id": "nd_example00001",
+      "url": "https://example.com/a.png",
+      "file_path": "/tmp/a.png"
+    },
+    {
+      "node_id": "nd_example00001",
+      "base64": "AAAA"
+    },
+    {
+      "node_id": "nd_example00001",
+      "base64": "AAAA",
+      "mime_type": "application/x-sh"
+    }
+  ]
+}

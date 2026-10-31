@@ -1,0 +1,27 @@
+[
+  {
+    "text": "Added 2 nodes under Pricing model.",
+    "structured": {
+      "applied": true,
+      "rev": 43,
+      "node_ids": [
+        "nd_example00001",
+        "nd_question0001"
+      ],
+      "refs": {
+        "ex1": "nd_example00001"
+      }
+    }
+  },
+  {
+    "text": "error budget_exceeded: max_nodes 40 reached",
+    "structured": {
+      "error": {
+        "code": "budget_exceeded",
+        "message": "max_nodes 40 reached",
+        "field": ""
+      }
+    },
+    "is_error": true
+  }
+]

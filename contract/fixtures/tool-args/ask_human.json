@@ -1,0 +1,33 @@
+{
+  "valid": [
+    {
+      "question": "Which segment first?",
+      "node_id": "nd_pricing000001",
+      "options": [
+        "Students",
+        "Teams"
+      ],
+      "context": "Background."
+    }
+  ],
+  "invalid": [
+    {},
+    {
+      "question": "q",
+      "options": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7"
+      ]
+    }
+  ],
+  "semantic": [
+    {
+      "question": "   "
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "valid": [
+    {
+      "query": "pricing"
+    },
+    {
+      "kinds": [
+        "example"
+      ],
+      "tags": [
+        "pricing"
+      ],
+      "statuses": [
+        "idle"
+      ],
+      "scope": "subtree",
+      "node_id": "@tiers",
+      "limit": 10
+    }
+  ],
+  "invalid": [
+    {
+      "query": "x",
+      "kinds": [
+        "bogus"
+      ]
+    },
+    {
+      "query": "x",
+      "scope": "everywhere"
+    }
+  ],
+  "semantic": [
+    {},
+    {
+      "query": "x",
+      "scope": "subtree"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "valid": [
+    {
+      "summary": "Done.",
+      "status": "done"
+    },
+    {
+      "summary": "s",
+      "status": "review",
+      "node_id": "nd_pricing000001",
+      "next_steps": [
+        "Compile"
+      ]
+    }
+  ],
+  "invalid": [
+    {
+      "summary": "s"
+    },
+    {
+      "summary": "s",
+      "status": "finished"
+    }
+  ],
+  "semantic": [
+    {
+      "summary": "s",
+      "status": "done",
+      "node_id": "root"
+    }
+  ]
+}

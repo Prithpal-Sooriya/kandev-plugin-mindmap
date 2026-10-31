@@ -1,0 +1,85 @@
+{
+  "name": "search",
+  "description": "Find nodes by text and filters. Use it before adding to avoid duplicates, and to find related ideas worth linking. Matches titles, bodies, tags and source titles. Give a query, filters, or both. Results are id-tagged lines with the node's path. Read-only.",
+  "annotations": {
+    "read_only_hint": true,
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "query": {
+        "type": "string",
+        "maxLength": 500,
+        "description": "Words to match. Optional if you give filters."
+      },
+      "kinds": {
+        "type": "array",
+        "maxItems": 9,
+        "items": {
+          "type": "string",
+          "enum": [
+            "topic",
+            "idea",
+            "research",
+            "example",
+            "question",
+            "decision",
+            "risk",
+            "action",
+            "doc"
+          ]
+        },
+        "description": "Only these kinds."
+      },
+      "tags": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "description": "Only nodes with all of these tags."
+      },
+      "statuses": {
+        "type": "array",
+        "maxItems": 6,
+        "items": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "claimed",
+            "running",
+            "review",
+            "done",
+            "failed"
+          ]
+        },
+        "description": "Only these statuses."
+      },
+      "scope": {
+        "type": "string",
+        "enum": [
+          "map",
+          "subtree",
+          "workspace"
+        ],
+        "description": "map (default) = your map; subtree = under node_id; workspace = every map in the workspace."
+      },
+      "node_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Subtree root, required when scope is subtree. Node id (nd_...) or an @ref you set earlier in this run."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "description": "Max results. Default 20."
+      }
+    }
+  }
+}

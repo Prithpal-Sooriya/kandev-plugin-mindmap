@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ln_link00000001",
+    "map_id": "map_demo00000001",
+    "from": "nd_example00001",
+    "to": "nd_question0001",
+    "label": "supports",
+    "reason": "Shows students accept a free tier.",
+    "author": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "created_at": "2026-10-01T12:05:00Z"
+  },
+  {
+    "id": "ln_link00000002",
+    "map_id": "map_demo00000001",
+    "from": "nd_pricing000001",
+    "to": "nd_example00001",
+    "author": {
+      "participant_id": "pt_host00000001"
+    },
+    "deleted": true,
+    "created_at": "2026-10-01T12:00:00Z"
+  }
+]

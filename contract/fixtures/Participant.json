@@ -1,0 +1,34 @@
+[
+  {
+    "id": "pt_host00000001",
+    "map_id": "map_demo00000001",
+    "kind": "human",
+    "name": "Host",
+    "color": "#ef4444",
+    "is_host": true,
+    "online": true,
+    "joined_at": "2026-10-01T12:00:00Z",
+    "last_seen_at": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "pt_guest0000001",
+    "map_id": "map_demo00000001",
+    "kind": "human",
+    "name": "Guest A",
+    "color": "#a855f7",
+    "joined_at": "2026-10-01T12:00:00Z",
+    "last_seen_at": "2026-10-01T12:05:00Z"
+  },
+  {
+    "id": "pt_agent0000001",
+    "map_id": "map_demo00000001",
+    "kind": "agent",
+    "name": "Researcher (Claude)",
+    "color": "#3b82f6",
+    "harness": "claude",
+    "run_id": "run_research0001",
+    "online": true,
+    "joined_at": "2026-10-01T12:00:00Z",
+    "last_seen_at": "2026-10-01T12:30:00Z"
+  }
+]

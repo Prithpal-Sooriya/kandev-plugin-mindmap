@@ -1,0 +1,29 @@
+{
+  "valid": [
+    {},
+    {
+      "node_id": "nd_pricing000001",
+      "depth": 2,
+      "include_bodies": true,
+      "cursor": "p2",
+      "limit": 50,
+      "map_id": "map_other0000001"
+    }
+  ],
+  "invalid": [
+    {
+      "depth": 11
+    },
+    {
+      "limit": 501
+    }
+  ],
+  "semantic": [
+    {
+      "node_id": "pricing"
+    },
+    {
+      "map_id": "nd_wrongprefix01"
+    }
+  ]
+}

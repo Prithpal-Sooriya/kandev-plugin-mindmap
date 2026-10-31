@@ -1,0 +1,20 @@
+[
+  {
+    "id": "sh_share00000001",
+    "map_id": "map_demo00000001",
+    "provider": "cloudflared",
+    "status": "active",
+    "url": "https://random-words.trycloudflare.com/m/mms1.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB/",
+    "created_at": "2026-10-01T12:00:00Z"
+  },
+  {
+    "id": "sh_share00000002",
+    "map_id": "map_demo00000001",
+    "provider": "cloudflared",
+    "status": "error",
+    "error": "cloudflared not found",
+    "install_hint": "brew install cloudflared",
+    "created_at": "2026-10-01T12:00:00Z",
+    "stopped_at": "2026-10-01T12:05:00Z"
+  }
+]

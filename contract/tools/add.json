@@ -1,0 +1,306 @@
+{
+  "name": "add",
+  "description": "Add one or more nodes, optionally nested, in one call. Use it for ideas, research findings, real-world examples (kind example with a source), questions, risks, decisions and actions. Batch related nodes into one call (up to 100 nodes, 3 levels deep) instead of many small calls. Cite evidence in sources, not in the body. Search first to avoid duplicates. Set ref on a node to refer to it later as @ref. Counts against your node budget. In propose mode the nodes appear as a proposal for review.",
+  "annotations": {
+    "read_only_hint": false,
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "parent_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Where to add. Default: your run's node. Node id (nd_...) or an @ref you set earlier in this run."
+      },
+      "after_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Insert after this existing child of parent_id. Default: after the last child."
+      },
+      "nodes": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 50,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "title"
+          ],
+          "properties": {
+            "ref": {
+              "type": "string",
+              "maxLength": 48,
+              "description": "Optional label (a-z0-9_-) so later calls can say @label instead of the id."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "One line, specific. Required."
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "idea",
+                "research",
+                "example",
+                "question",
+                "decision",
+                "risk",
+                "action",
+                "topic"
+              ],
+              "description": "Default idea. Use example for real-world cases (with a source), research for findings, question for open questions."
+            },
+            "body": {
+              "type": "string",
+              "maxLength": 65536,
+              "description": "Markdown detail. Keep it short; put evidence in sources."
+            },
+            "tags": {
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "description": "Short lowercase tags, no spaces or #, e.g. [\"pricing\", \"b2b\"]."
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "How sure you are, 0-1. Set it for claims."
+            },
+            "sources": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "description": "Absolute http(s) URL of the evidence."
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "description": "Page or document title."
+                  },
+                  "quote": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "description": "Short verbatim excerpt that supports the claim."
+                  },
+                  "accessed_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When you read it (RFC 3339). Defaults to now."
+                  }
+                }
+              },
+              "description": "Evidence for this node. Research and example nodes should have at least one."
+            },
+            "children": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "ref": {
+                    "type": "string",
+                    "maxLength": 48,
+                    "description": "Optional label (a-z0-9_-) so later calls can say @label instead of the id."
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "One line, specific. Required."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "idea",
+                      "research",
+                      "example",
+                      "question",
+                      "decision",
+                      "risk",
+                      "action",
+                      "topic"
+                    ],
+                    "description": "Default idea. Use example for real-world cases (with a source), research for findings, question for open questions."
+                  },
+                  "body": {
+                    "type": "string",
+                    "maxLength": 65536,
+                    "description": "Markdown detail. Keep it short; put evidence in sources."
+                  },
+                  "tags": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 40
+                    },
+                    "description": "Short lowercase tags, no spaces or #, e.g. [\"pricing\", \"b2b\"]."
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "How sure you are, 0-1. Set it for claims."
+                  },
+                  "sources": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "url"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "maxLength": 2048,
+                          "description": "Absolute http(s) URL of the evidence."
+                        },
+                        "title": {
+                          "type": "string",
+                          "maxLength": 300,
+                          "description": "Page or document title."
+                        },
+                        "quote": {
+                          "type": "string",
+                          "maxLength": 1000,
+                          "description": "Short verbatim excerpt that supports the claim."
+                        },
+                        "accessed_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When you read it (RFC 3339). Defaults to now."
+                        }
+                      }
+                    },
+                    "description": "Evidence for this node. Research and example nodes should have at least one."
+                  },
+                  "children": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "title"
+                      ],
+                      "properties": {
+                        "ref": {
+                          "type": "string",
+                          "maxLength": 48,
+                          "description": "Optional label (a-z0-9_-) so later calls can say @label instead of the id."
+                        },
+                        "title": {
+                          "type": "string",
+                          "maxLength": 200,
+                          "description": "One line, specific. Required."
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "idea",
+                            "research",
+                            "example",
+                            "question",
+                            "decision",
+                            "risk",
+                            "action",
+                            "topic"
+                          ],
+                          "description": "Default idea. Use example for real-world cases (with a source), research for findings, question for open questions."
+                        },
+                        "body": {
+                          "type": "string",
+                          "maxLength": 65536,
+                          "description": "Markdown detail. Keep it short; put evidence in sources."
+                        },
+                        "tags": {
+                          "type": "array",
+                          "maxItems": 20,
+                          "items": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "description": "Short lowercase tags, no spaces or #, e.g. [\"pricing\", \"b2b\"]."
+                        },
+                        "confidence": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1,
+                          "description": "How sure you are, 0-1. Set it for claims."
+                        },
+                        "sources": {
+                          "type": "array",
+                          "maxItems": 50,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "url"
+                            ],
+                            "properties": {
+                              "url": {
+                                "type": "string",
+                                "maxLength": 2048,
+                                "description": "Absolute http(s) URL of the evidence."
+                              },
+                              "title": {
+                                "type": "string",
+                                "maxLength": 300,
+                                "description": "Page or document title."
+                              },
+                              "quote": {
+                                "type": "string",
+                                "maxLength": 1000,
+                                "description": "Short verbatim excerpt that supports the claim."
+                              },
+                              "accessed_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "When you read it (RFC 3339). Defaults to now."
+                              }
+                            }
+                          },
+                          "description": "Evidence for this node. Research and example nodes should have at least one."
+                        }
+                      }
+                    },
+                    "description": "Child nodes, nested up to 3 levels per call."
+                  }
+                }
+              },
+              "description": "Child nodes, nested up to 3 levels per call."
+            }
+          }
+        },
+        "description": "Top-level nodes to add under parent_id."
+      }
+    },
+    "required": [
+      "nodes"
+    ]
+  }
+}

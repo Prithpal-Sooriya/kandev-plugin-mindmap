@@ -1,0 +1,110 @@
+[
+  {
+    "type": "hello",
+    "payload": {
+      "contract": 1,
+      "client_id": "tab-7f3a",
+      "participant_id": "pt_guest0000001",
+      "name": "Guest A",
+      "color": "#a855f7",
+      "since_rev": 40
+    }
+  },
+  {
+    "type": "hello",
+    "payload": {
+      "contract": 1,
+      "client_id": "tab-0001"
+    }
+  },
+  {
+    "type": "submit",
+    "payload": {
+      "ops": [
+        {
+          "id": "op_create00000001",
+          "map_id": "map_demo00000001",
+          "rev": 0,
+          "type": "node.create",
+          "payload": {
+            "node": {
+              "id": "nd_example00001",
+              "parent_id": "nd_pricing000001",
+              "order": "V",
+              "title": "Example Co: free tier with 3 notebooks",
+              "body_md": "Detail.",
+              "kind": "example",
+              "tags": [
+                "pricing"
+              ],
+              "confidence": 0.9,
+              "sources": [
+                {
+                  "url": "https://example.com/pricing",
+                  "title": "Example Co pricing",
+                  "quote": "Free for up to 3 notebooks.",
+                  "accessed_at": "2026-10-01T12:05:00Z"
+                }
+              ],
+              "status": "idle",
+              "color": "#22c55e",
+              "collapsed": true
+            }
+          },
+          "actor": {
+            "participant_id": "pt_agent0000001",
+            "run_id": "run_research0001"
+          },
+          "batch_id": "bt_batch00000001",
+          "base_rev": 40
+        }
+      ]
+    }
+  },
+  {
+    "type": "presence.update",
+    "payload": {
+      "presence": {
+        "participant_id": "pt_guest0000001",
+        "cursor": {
+          "x": 120.5,
+          "y": -40
+        },
+        "selection": [
+          "nd_pricing000001",
+          "nd_example00001"
+        ],
+        "viewport": {
+          "x": -200,
+          "y": 50,
+          "w": 1440,
+          "h": 900
+        },
+        "editing": {
+          "node_id": "nd_pricing000001",
+          "field": "body_md",
+          "expires_at": "2026-10-01T12:30:00Z"
+        },
+        "updated_at": "2026-10-01T12:05:00Z"
+      }
+    }
+  },
+  {
+    "type": "output.subscribe",
+    "payload": {
+      "run_id": "run_research0001"
+    }
+  },
+  {
+    "type": "output.unsubscribe",
+    "payload": {
+      "run_id": "run_research0001"
+    }
+  },
+  {
+    "type": "ping",
+    "payload": {
+      "nonce": "n1"
+    }
+  }
+]

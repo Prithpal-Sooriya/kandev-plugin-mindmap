@@ -1,0 +1,17 @@
+[
+  {
+    "node_id": "nd_pricing000001",
+    "profile_id": "profile-claude",
+    "template": "explore",
+    "lens": "futurist",
+    "mode": "propose",
+    "goal": "Explore pricing.",
+    "budget": {
+      "max_depth": 3,
+      "max_nodes": 40,
+      "max_subagents": 4,
+      "max_minutes": 60
+    },
+    "repo_id": "repo-1"
+  }
+]

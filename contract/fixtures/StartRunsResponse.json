@@ -1,0 +1,68 @@
+[
+  {
+    "runs": [
+      {
+        "id": "run_research0001",
+        "map_id": "map_demo00000001",
+        "node_id": "nd_pricing000001",
+        "task_id": "task-123",
+        "session_id": "sess-456",
+        "profile_id": "profile-claude",
+        "profile_name": "Claude Sonnet",
+        "harness": "claude",
+        "template": "research",
+        "lens": "researcher",
+        "mode": "apply",
+        "goal": "Find three real pricing examples with sources.",
+        "budget": {
+          "max_depth": 3,
+          "max_nodes": 40,
+          "max_subagents": 4,
+          "max_minutes": 60
+        },
+        "usage": {
+          "nodes": 7,
+          "subagents": 1,
+          "depth": 2
+        },
+        "parent_run_id": "run_explorer00001",
+        "root_run_id": "run_explorer00001",
+        "swarm_id": "sw-1",
+        "status": "waiting",
+        "waiting_reason": "question",
+        "transport": "mcp",
+        "participant_id": "pt_agent0000001",
+        "started_by": "pt_host00000001",
+        "proposal_id": "prp_garden000001",
+        "summary": "Added 7 nodes.",
+        "last_output": "Searching for pricing pages...",
+        "reported": true,
+        "created_at": "2026-10-01T12:00:00Z",
+        "updated_at": "2026-10-01T12:05:00Z",
+        "ended_at": "2026-10-01T12:30:00Z"
+      },
+      {
+        "id": "run_skeptic00001",
+        "map_id": "map_demo00000001",
+        "node_id": "nd_pricing000001",
+        "profile_id": "profile-pi",
+        "harness": "pi",
+        "template": "swarm",
+        "mode": "propose",
+        "budget": {},
+        "usage": {
+          "nodes": 0,
+          "subagents": 0,
+          "depth": 0
+        },
+        "status": "failed",
+        "error": "Agent exited with code 1",
+        "transport": "bridge",
+        "participant_id": "pt_agent0000002",
+        "started_by": "pt_guest0000001",
+        "created_at": "2026-10-01T12:00:00Z",
+        "updated_at": "2026-10-01T12:00:00Z"
+      }
+    ]
+  }
+]

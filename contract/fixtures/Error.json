@@ -1,0 +1,11 @@
+[
+  {
+    "code": "cycle",
+    "message": "moving nd_pricing000001 under nd_example00001 would create a cycle",
+    "field": "parent_id"
+  },
+  {
+    "code": "not_implemented",
+    "message": "later"
+  }
+]

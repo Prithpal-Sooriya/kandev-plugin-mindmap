@@ -1,0 +1,47 @@
+{
+  "name": "report",
+  "description": "Finish your run: write the final summary on your node and hand off. Call it once, last. Use status review when a human should check your work (always in propose mode, or when unsure) and done when nothing needs checking. The summary should say what you added or changed, what is still open, and anything you could not verify.",
+  "annotations": {
+    "read_only_hint": false,
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "summary": {
+        "type": "string",
+        "maxLength": 8000,
+        "description": "Markdown summary of the run."
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "review",
+          "done"
+        ],
+        "description": "Hand-off state."
+      },
+      "node_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Report on this node instead of your run's node."
+      },
+      "next_steps": {
+        "type": "array",
+        "maxItems": 10,
+        "items": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "description": "Suggested follow-ups, shown as quick actions."
+      }
+    },
+    "required": [
+      "summary",
+      "status"
+    ]
+  }
+}

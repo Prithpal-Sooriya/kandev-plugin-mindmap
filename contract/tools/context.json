@@ -1,0 +1,22 @@
+{
+  "name": "context",
+  "description": "Call this FIRST in every mind map run, and again if you lose track. Returns your brief and goal, run mode (apply = writes go live; propose = writes become a proposal a human reviews), template and lens, your node with its ancestors and an id-tagged outline of its subtree, budget left (nodes, sub-agents, depth), your open ask_human questions with any answers, and nodes other agents have claimed nearby. Read-only.",
+  "annotations": {
+    "read_only_hint": true,
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "subtree_depth": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 6,
+        "description": "Levels of your subtree to include. Default 2."
+      }
+    }
+  }
+}

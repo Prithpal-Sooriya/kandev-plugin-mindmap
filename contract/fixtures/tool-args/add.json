@@ -1,0 +1,136 @@
+{
+  "valid": [
+    {
+      "nodes": [
+        {
+          "title": "One idea"
+        }
+      ]
+    },
+    {
+      "parent_id": "nd_pricing000001",
+      "after_id": "nd_example00001",
+      "nodes": [
+        {
+          "ref": "tiers",
+          "title": "Tiers",
+          "kind": "topic",
+          "body": "b",
+          "tags": [
+            "pricing"
+          ],
+          "confidence": 0.5,
+          "sources": [
+            {
+              "url": "https://example.com/pricing",
+              "title": "Example Co pricing",
+              "quote": "Free for up to 3 notebooks.",
+              "accessed_at": "2026-10-01T12:05:00Z"
+            }
+          ],
+          "children": [
+            {
+              "title": "Free",
+              "children": [
+                {
+                  "title": "3 notebooks",
+                  "kind": "example",
+                  "sources": [
+                    {
+                      "url": "https://example.com/x"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "invalid": [
+    {},
+    {
+      "nodes": []
+    },
+    {
+      "nodes": [
+        {
+          "body": "no title"
+        }
+      ]
+    },
+    {
+      "nodes": [
+        {
+          "title": "x",
+          "kind": "doc"
+        }
+      ]
+    },
+    {
+      "nodes": [
+        {
+          "title": "x",
+          "confidence": 2
+        }
+      ]
+    },
+    {
+      "nodes": [
+        {
+          "title": "x",
+          "children": [
+            {
+              "title": "y",
+              "children": [
+                {
+                  "title": "z",
+                  "children": [
+                    {
+                      "title": "too deep"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "semantic": [
+    {
+      "nodes": [
+        {
+          "title": "x",
+          "sources": [
+            {
+              "url": "ftp://example.com"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "nodes": [
+        {
+          "title": "a",
+          "ref": "dup"
+        },
+        {
+          "title": "b",
+          "ref": "dup"
+        }
+      ]
+    },
+    {
+      "nodes": [
+        {
+          "title": "x",
+          "ref": "@bad"
+        }
+      ]
+    }
+  ]
+}
