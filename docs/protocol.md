@@ -410,7 +410,8 @@ turn_ended | approval`).
    `stop_requested`; bridge runs get a fresh token in the message) and the next `RUNNING` state makes it `running`.
 5. **Budget.** `usage` is summed across the run tree (`root_run_id`). Writes that would exceed it fail with
    `budget_exceeded`; so does a `spawn` beyond `max_subagents`. `max_minutes` is enforced by a 30 s watchdog that
-   stops the run (as in 4) with `error: "time budget of N minutes used up"`.
+   stops a `queued` or `running` run (as in 4) with `error: "time budget of N minutes used up"`. Runs in
+   `review` or `waiting` are idle and are left alone (a stop message would start a new turn).
 6. **Swarms.** `POST swarms` creates a **coordinator** run (`template: swarm`, no task, no lens) that owns the shared
    budget pool (`max_nodes` = per-agent budget × agents) and the `swarm_id`. For each member it adds a
    `"<Lens> lens"` idea child under the target node and starts a lens run there (`parent_run_id` = coordinator,

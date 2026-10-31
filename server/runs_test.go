@@ -561,6 +561,12 @@ func TestTimeBudgetStopsRun(t *testing.T) {
 	m := newMapViaAPI(t, p)
 	r := apiRuns(t, p, "/api/maps/"+m.ID+"/runs", map[string]any{"node_id": m.RootID, "template": "explore", "profile_id": "prof-claude",
 		"budget": map[string]any{"max_minutes": 5}})[0]
+	idle := apiRuns(t, p, "/api/maps/"+m.ID+"/runs", map[string]any{"node_id": m.RootID, "template": "research", "profile_id": "prof-claude",
+		"budget": map[string]any{"max_minutes": 5}})[0]
+	state(p, idle.TaskID, "RUNNING")
+	tool(t, p, idle.TaskID, "report", map[string]any{"summary": "Done.", "status": "review"})
+	state(p, idle.TaskID, "WAITING_FOR_INPUT")
+	state(p, r.TaskID, "RUNNING")
 	p.svc.EnforceTimeBudgets(context.Background(), time.Now().UTC().Add(4*time.Minute))
 	if got := getRun(t, p, r.ID); got.Status.Terminal() {
 		t.Fatal("stopped too early")
@@ -569,6 +575,9 @@ func TestTimeBudgetStopsRun(t *testing.T) {
 	got := getRun(t, p, r.ID)
 	if got.Status != contract.RunStopped || !strings.Contains(got.Error, "time budget") {
 		t.Fatalf("after time budget: %s %q", got.Status, got.Error)
+	}
+	if got := getRun(t, p, idle.ID); got.Status != contract.RunReview {
+		t.Fatalf("idle run in review was stopped: %s", got.Status)
 	}
 	if s := h.Sent(); len(s) != 1 || !strings.Contains(s[0].Text, "time budget") {
 		t.Fatalf("stop message: %+v", s)

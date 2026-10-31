@@ -774,7 +774,9 @@ func (s *Service) EnforceTimeBudgets(ctx context.Context, now time.Time) {
 		return
 	}
 	for _, r := range runs {
-		if r.Budget.MaxMinutes <= 0 || r.CreatedAt.IsZero() || r.Status == contract.RunWaiting && r.WaitingReason == contract.WaitingApproval {
+		// Only agents that are working use time: a run in review or waiting
+		// on a human is idle, and a stop message would wake it up.
+		if r.Budget.MaxMinutes <= 0 || r.CreatedAt.IsZero() || (r.Status != contract.RunRunning && r.Status != contract.RunQueued) || isCoordinator(r) {
 			continue
 		}
 		if now.Sub(r.CreatedAt) > time.Duration(r.Budget.MaxMinutes)*time.Minute {
