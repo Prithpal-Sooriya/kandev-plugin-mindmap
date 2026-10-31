@@ -25,6 +25,7 @@ test: test-backend typecheck test-ui
 
 test-backend:
 	go test -race ./server/...
+	go test -count=1 -run 'TestLoad' ./server/...
 
 test-ui: deps
 	npm run test:ui
