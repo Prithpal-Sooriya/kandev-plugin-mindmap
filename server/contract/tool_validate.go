@@ -376,8 +376,8 @@ func (a *SpawnArgs) Validate() error {
 		if err := checkLen(f+".goal", ag.Goal, MaxQuestionLen, true); err != nil {
 			return argErr(f+".goal", "required: what the sub-agent should achieve")
 		}
-		if ag.Template != "" && !slices.Contains([]Template{TemplateResearch, TemplateExplore, TemplateSwarm, TemplateCritique}, ag.Template) {
-			return argErr(f+".template", "must be research, explore, swarm or critique")
+		if ag.Template != "" && !slices.Contains(SpawnTemplates, ag.Template) {
+			return argErr(f+".template", "must be research, explore, swarm, critique, expand or examples")
 		}
 		if ag.Lens != "" && !ag.Lens.Valid() {
 			return argErr(f+".lens", "unknown lens %q", ag.Lens)

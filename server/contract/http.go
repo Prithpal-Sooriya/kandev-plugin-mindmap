@@ -126,6 +126,45 @@ type MessageRunRequest struct {
 	Text string `json:"text"`
 }
 
+// AnswerQuestionRequest answers an ask_human question node
+// (POST .../nodes/<node>/answer). It commits a question.answer op as the
+// caller, and the backend relays the answer to the asking agent.
+type AnswerQuestionRequest struct {
+	Answer string `json:"answer"`
+}
+
+// RepoInfo is a Kandev repository a run can work in (GET .../repos).
+type RepoInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// RunTasksResponse lists the Kandev task ids that are map runs, so the task
+// panel only offers itself in node-launched tasks.
+type RunTasksResponse struct {
+	TaskIDs []string `json:"task_ids"`
+}
+
+// TaskRunInfo is the run behind a Kandev task, for the task panel
+// (GET .../tasks/<task>/run).
+type TaskRunInfo struct {
+	Run      Run       `json:"run"`
+	MapTitle string    `json:"map_title"`
+	Path     []NodeRef `json:"path"`   // root to the run's node
+	Branch   []NodeRef `json:"branch"` // the node's subtree, depth-first; Depth is relative to the node
+	// More is set when Branch was cut at its limit.
+	More bool `json:"more,omitempty"`
+}
+
+// NodeRef is a compact node line.
+type NodeRef struct {
+	ID     string     `json:"id"`
+	Title  string     `json:"title"`
+	Kind   NodeKind   `json:"kind"`
+	Status NodeStatus `json:"status"`
+	Depth  int        `json:"depth,omitempty"`
+}
+
 // AgentProfile is a Kandev agent profile as offered to map users and guests.
 type AgentProfile struct {
 	ID      string  `json:"id"`

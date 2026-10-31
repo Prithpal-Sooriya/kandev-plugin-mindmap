@@ -19,7 +19,7 @@ export const TERMINAL_RUN_STATUSES: readonly RunStatus[] = ["done", "failed", "s
 export const WAITING_REASONS = ["question", "turn_ended", "approval"] as const;
 export type WaitingReason = (typeof WAITING_REASONS)[number];
 
-export const TEMPLATES = ["research", "explore", "swarm", "garden", "critique", "compile", "synthesis", "execute", "custom"] as const;
+export const TEMPLATES = ["research", "explore", "swarm", "garden", "critique", "compile", "synthesis", "execute", "custom", "expand", "examples"] as const;
 export type Template = (typeof TEMPLATES)[number];
 
 export const LENSES = ["researcher", "skeptic", "builder", "contrarian", "examples_hunter", "futurist"] as const;

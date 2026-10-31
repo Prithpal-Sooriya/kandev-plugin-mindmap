@@ -833,7 +833,9 @@ agent_tools:
                     "research",
                     "explore",
                     "swarm",
-                    "critique"
+                    "critique",
+                    "expand",
+                    "examples"
                   ],
                   "description": "Default research."
                 },

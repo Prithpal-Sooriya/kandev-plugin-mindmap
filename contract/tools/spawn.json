@@ -40,7 +40,9 @@
                 "research",
                 "explore",
                 "swarm",
-                "critique"
+                "critique",
+                "expand",
+                "examples"
               ],
               "description": "Default research."
             },
