@@ -407,7 +407,7 @@ func TestPortPersistsAcrossRestarts(t *testing.T) {
 func TestOpsRange(t *testing.T) {
 	e := newEnv(t)
 	defer e.http.Close()
-	
+
 	req := contract.SubmitRequest{
 		Ops: []contract.Op{
 			createOp(e.m.ID, "nd_100000000000000000000000", e.m.RootID, "A"),
@@ -418,8 +418,8 @@ func TestOpsRange(t *testing.T) {
 	if res.StatusCode != 200 {
 		t.Fatalf("submit failed: %v", res.StatusCode)
 	}
-	
-	res, body := e.do("GET", "/m/"+e.token+"/api/maps/"+e.m.ID+"/ops?from=2&to=3", nil, nil)
+
+	res, body := e.do("GET", "/m/"+e.token+"/api/maps/"+e.m.ID+"/ops?from=0&to=3", nil, nil)
 	if res.StatusCode != 200 {
 		t.Fatalf("ops range failed: %v", res.StatusCode)
 	}
@@ -427,7 +427,7 @@ func TestOpsRange(t *testing.T) {
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatal(err)
 	}
-	if len(out["ops"]) != 2 {
-		t.Errorf("expected 2 ops, got %d", len(out["ops"]))
+	if len(out["ops"]) != 3 {
+		t.Errorf("expected 3 ops, got %d", len(out["ops"]))
 	}
 }

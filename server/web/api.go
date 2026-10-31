@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 
 	contractfiles "kandev-plugin-mindmap/contract"
@@ -367,7 +367,7 @@ func (s *Server) opsRange(w http.ResponseWriter, r *http.Request, p *principal) 
 		writeErr(w, contract.Errf(contract.ErrBadRequest, "from and to are required"))
 		return
 	}
-	
+
 	fromRev, err := strconv.ParseInt(from, 10, 64)
 	if err != nil {
 		writeErr(w, contract.Errf(contract.ErrBadRequest, "from must be an integer"))
@@ -378,7 +378,22 @@ func (s *Server) opsRange(w http.ResponseWriter, r *http.Request, p *principal) 
 		writeErr(w, contract.Errf(contract.ErrBadRequest, "to must be an integer"))
 		return
 	}
-	ops, err := s.svc.Store.OpsSince(mapID, fromRev - 1, int(toRev - fromRev + 1))
+
+	since := fromRev - 1
+	if since < 0 {
+		since = 0
+	}
+	ops, err := s.svc.Store.OpsSince(mapID, since, int(toRev-fromRev+1))
+	if err == nil {
+		filtered := make([]contract.Op, 0, len(ops))
+		for _, op := range ops {
+			if op.Rev <= toRev {
+				filtered = append(filtered, op)
+			}
+		}
+		ops = filtered
+	}
+
 	if err != nil {
 		writeErr(w, err)
 		return
