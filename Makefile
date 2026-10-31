@@ -1,123 +1,78 @@
-.PHONY: build run test test-backend test-recipes test-ui test-package-verifier \
-	test-release-version typecheck-recipes audit-recipes check-format fmt vet \
-	package package-host package-file verify-package verify-package-host clean
+.PHONY: deps build test test-backend test-ui typecheck vet fmt check-format \
+	bundle package package-host package-file clean
 
-# When you rename the plugin, update BIN and VERSION to match manifest.yaml's
-# id and version (PKG_OUT is derived from them).
-BIN := bin/kandev-plugin-template
-VERSION := 0.2.0
+# BIN and VERSION must match manifest.yaml's id and version.
+BIN := bin/kandev-plugin-mindmap
+VERSION := 0.0.1
 STAGE := .build/stage
 PKG_OUT := $(notdir $(BIN))-$(VERSION).tar.gz
 
-# The sibling kandev checkout the `replace` in go.mod points at (see README,
-# "Developing against the SDK"). The packaging step runs plugin-pack from
-# INSIDE this directory, i.e. in kandev's own module context, rather than as
-# `go run github.com/kandev/kandev/cmd/plugin-pack` from here. Both spellings
-# work, but the second resolves plugin-pack's dependencies against *this*
-# module's go.sum — and plugin-pack imports far more of the kandev backend
-# than server/ does, so those entries are absent and packaging dies with
-# "missing go.sum entry". Adding them would mean this template's go.sum has to
-# track every dependency the kandev backend grows, which `go mod tidy` then
-# fights over. Building it where it lives sidesteps all of that.
-KANDEV_SDK := ../kandev/apps/backend
+# Sibling checkout of the kandev monorepo at the .kandev-sdk-ref commit.
+# plugin-pack runs inside it so its dependencies resolve against kandev's go.sum.
+KANDEV_SDK := ../kandev-sdk/apps/backend
 
-## Build the plugin binary for the host platform (development use). kandev
-## itself always installs from `make package`/`package-host` output, not this.
+PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+
+## Frontend dev deps (plugin-sdk, esbuild, typescript, vitest).
+deps:
+	@test -d node_modules || npm install --no-audit --no-fund
+
 build:
 	mkdir -p bin
-	go build -o $(BIN) ./server/...
+	CGO_ENABLED=0 go build -o $(BIN) ./server
 
-## Build + run. Mainly for -race / manual smoke checks: kandev normally spawns
-## this binary itself via the go-plugin handshake, so a manually-started
-## process has nothing to talk to on the other end.
-run: build
-	./$(BIN)
-
-test: test-backend typecheck-recipes test-recipes test-ui test-package-verifier test-release-version
+test: test-backend typecheck test-ui
 
 test-backend:
-	go test ./server/... ./recipes/source-control/server/...
+	go test -race ./server/...
 
-test-recipes:
-	npm run test:recipes
-
-test-ui:
+test-ui: deps
 	npm run test:ui
 
-test-package-verifier:
-	sh scripts/test-verify-package.sh
-
-test-release-version:
-	sh scripts/test-verify-release-version.sh
-
-typecheck-recipes:
-	npm run typecheck:recipes
-
-audit-recipes:
-	npm audit --audit-level=high
-
-fmt:
-	gofmt -l .
-
-check-format:
-	@test -z "$$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
+typecheck: deps
+	npm run typecheck
 
 vet:
-	go vet ./server/... ./recipes/source-control/server/...
+	go vet ./server/...
 
-## Cross-compile server/plugin-<goos>-<goarch>[.exe] for every platform in
-## manifest.yaml's runtime.executables, stage manifest.yaml + ui/ alongside
-## them, and pack the tree into $(PKG_OUT) with
-## github.com/kandev/kandev/cmd/plugin-pack (resolved via the `replace` in
-## go.mod). Install the tarball via Settings > Plugins or curl -F package=@...
-package:
+fmt:
+	gofmt -w server
+
+check-format:
+	@out="$$(gofmt -l server)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+
+bundle: deps
+	npm run build:ui
+
+define stage_common
 	rm -rf $(STAGE)
-	mkdir -p $(STAGE)/server
+	mkdir -p $(STAGE)/server $(STAGE)/ui
 	cp manifest.yaml $(STAGE)/manifest.yaml
-	cp -r ui $(STAGE)/ui
-	GOOS=linux   GOARCH=amd64 go build -o $(STAGE)/server/plugin-linux-amd64       ./server
-	GOOS=linux   GOARCH=arm64 go build -o $(STAGE)/server/plugin-linux-arm64       ./server
-	GOOS=darwin  GOARCH=amd64 go build -o $(STAGE)/server/plugin-darwin-amd64      ./server
-	GOOS=darwin  GOARCH=arm64 go build -o $(STAGE)/server/plugin-darwin-arm64      ./server
-	GOOS=windows GOARCH=amd64 go build -o $(STAGE)/server/plugin-windows-amd64.exe ./server
+	cp ui/bundle.js ui/plugin.css $(STAGE)/ui/
+endef
+
+## All-platform archive (release artifact). Pure Go (CGO_ENABLED=0) so it cross-compiles.
+package: bundle
+	$(stage_common)
+	@set -e; for p in $(PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; ext=""; [ "$$os" = windows ] && ext=".exe"; \
+		echo "building $$os/$$arch"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -o $(STAGE)/server/plugin-$$os-$$arch$$ext ./server; \
+	done
 	cd $(KANDEV_SDK) && go run ./cmd/plugin-pack -dir $(CURDIR)/$(STAGE) -out $(CURDIR)/$(PKG_OUT)
 	rm -rf $(STAGE)
 	@echo "Wrote $(PKG_OUT)"
 
-## Package for the host platform only — faster local iteration than the full
-## 5-platform `make package` (matches plugin-pack's -platform-only).
-package-host:
-	rm -rf $(STAGE)
-	mkdir -p $(STAGE)/server
-	cp manifest.yaml $(STAGE)/manifest.yaml
-	cp -r ui $(STAGE)/ui
-	go build -o $(STAGE)/server/plugin-$$(go env GOOS)-$$(go env GOARCH)$$(go env GOEXE) ./server
+## Host-platform-only archive (fast local install / CI smoke).
+package-host: bundle
+	$(stage_common)
+	CGO_ENABLED=0 go build -trimpath -o $(STAGE)/server/plugin-$$(go env GOOS)-$$(go env GOARCH)$$(go env GOEXE) ./server
 	cd $(KANDEV_SDK) && go run ./cmd/plugin-pack -dir $(CURDIR)/$(STAGE) -out $(CURDIR)/$(PKG_OUT) -platform-only
 	rm -rf $(STAGE)
 	@echo "Wrote $(PKG_OUT)"
 
-## Build and validate the all-platform archive: plugin-pack checks the manifest;
-## this additionally verifies checksums, expected binaries, and that opt-in
-## recipe/development files did not leak into the generated starter package.
-verify-package: package
-	@set -eu; \
-		tmp="$$(mktemp -d)"; \
-		trap 'rm -rf "$$tmp"' EXIT; \
-		tar -xzf "$(PKG_OUT)" -C "$$tmp"; \
-		sh scripts/verify-package.sh "$$tmp" full
-
-## Faster equivalent for local/CI host-platform packaging.
-verify-package-host: package-host
-	@set -eu; \
-		tmp="$$(mktemp -d)"; \
-		trap 'rm -rf "$$tmp"' EXIT; \
-		tar -xzf "$(PKG_OUT)" -C "$$tmp"; \
-		sh scripts/verify-package.sh "$$tmp" host "$$(go env GOOS)-$$(go env GOARCH)"
-
-## Print the archive name without building it. Release automation uses this
-## after it validates the manifest and Makefile versions.
 package-file:
 	@printf '%s\n' "$(PKG_OUT)"
 
 clean:
-	rm -rf bin $(STAGE) $(notdir $(BIN))-*.tar.gz
+	rm -rf bin .build $(notdir $(BIN))-*.tar.gz
