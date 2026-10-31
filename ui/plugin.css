@@ -347,13 +347,13 @@ select.mm-input { padding-right: 4px; }
 .mm-run-mode { gap: 14px; }
 .mm-radio { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .mm-disabled { opacity: 0.5; cursor: not-allowed; }
-.mm-run-budget summary { cursor: pointer; font-size: 12px; color: var(--muted-foreground); }
-.mm-run-budget-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+.mm-dlg-budget summary { cursor: pointer; font-size: 12px; color: var(--muted-foreground); }
+.mm-dlg-budget-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
 .mm-swarm-row { gap: 6px; }
 .mm-swarm-row select { flex: 1; min-width: 0; }
 .mm-err { color: var(--destructive); font-style: normal; font-size: 12px; }
-.mm-run-actions { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; }
-.mm-run-actions .mm-row { gap: 6px; }
+.mm-runact { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; }
+.mm-runact .mm-row { gap: 6px; }
 .mm-menu { position: fixed; z-index: 30; min-width: 190px; padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--popover, var(--card)); box-shadow: 0 12px 36px color-mix(in oklch, var(--foreground) 20%, transparent); }
 .mm-menu-group + .mm-menu-group { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
 .mm-menu-item { display: block; width: 100%; padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--foreground); font: inherit; text-align: left; cursor: pointer; }

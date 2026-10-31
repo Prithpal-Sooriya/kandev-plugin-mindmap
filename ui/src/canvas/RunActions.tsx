@@ -39,7 +39,7 @@ export function RunActions(props: { ctl: MapController; run: Run }) {
   };
 
   return (
-    <div className="mm-run-actions">
+    <div className="mm-runact">
       <div className="mm-row">
         {canStop(run) ? <button type="button" className="mm-btn mm-btn-xs" disabled={busy} onClick={stop} data-testid="mm-run-stop">Stop</button> : null}
         {canMessage(run) ? <button type="button" className={`mm-btn mm-btn-xs${composing ? " mm-btn-on" : ""}`} onClick={() => setComposing(!composing)}>Message</button> : null}

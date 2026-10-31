@@ -164,9 +164,9 @@ export function RunDialog(props: { ctl: MapController; kind: RunKind; nodeId: st
             </select>
           </label>
         ) : null}
-        <details className="mm-run-budget" open={props.kind === "explore"}>
+        <details className="mm-dlg-budget" open={props.kind === "explore"}>
           <summary>Budget{props.kind === "swarm" ? " (per agent)" : ""}</summary>
-          <div className="mm-run-budget-grid">
+          <div className="mm-dlg-budget-grid">
             {([["nodes", "New nodes"], ["depth", "Depth"], ["subagents", "Sub-agents"], ["minutes", "Minutes"]] as const).map(([k, label]) => (
               <label key={k} className="mm-field">
                 <span>{label}</span>
