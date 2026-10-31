@@ -1,22 +1,23 @@
-// Host-supplied React runtime. The bundle ships no React of its own: every
-// element is created with the host's factory so plugin components share the
-// app's React instance, context, and dev tools.
-import type { HostReact, PluginHostApi } from "@kandev/plugin-sdk";
+// React runtime binding. The canvas code never imports "react": it uses `h`,
+// `Fragment` and `React` from here. The in-Kandev bundle binds the host's
+// React instance (no bundled React, no react-dom); the standalone guest app
+// binds its own React 19. Only the primitives in HostReact are used, so the
+// same components run in both.
+import type { HostReact } from "@kandev/plugin-sdk";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export let h: (...args: any[]) => any = () => {
-  throw new Error("kandev-plugin-mindmap: host runtime not bound");
+  throw new Error("kandev-plugin-mindmap: React runtime not bound");
 };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export let Fragment: any = null;
 export let React: HostReact;
-export let host: PluginHostApi;
 
-export function bindHost(api: PluginHostApi): void {
-  host = api;
-  React = api.React;
-  h = api.jsx;
-  Fragment = api.React.Fragment;
+/** Binds the React instance and element factory used by every component. */
+export function bindReact(react: HostReact, jsx?: HostReact["createElement"]): void {
+  React = react;
+  h = jsx ?? react.createElement;
+  Fragment = react.Fragment;
 }
 
 // JSX.IntrinsicElements typing without depending on @types/react.

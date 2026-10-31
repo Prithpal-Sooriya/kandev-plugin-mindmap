@@ -4,6 +4,16 @@
     {
       "name": "kandev-local",
       "url": "http://127.0.0.1:38430"
+    },
+    {
+      "name": "mindmap-standalone-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/dev.mjs"],
+      "port": 5178
+    },
+    {
+      "name": "mindmap-standalone-attach",
+      "url": "http://127.0.0.1:5178"
     }
   ]
 }

@@ -1,15 +1,320 @@
-/* kandev-plugin-mindmap: colors come from Kandev's CSS custom properties. */
-.mm-page {
-  padding: 24px;
+/* kandev-plugin-mindmap canvas. Colours come only from the host's CSS custom
+   properties (--foreground, --background, --card, --muted, --border, --primary,
+   --accent, --destructive, ...) and color-mix(). The standalone guest app ships
+   a default palette with the same variable names (ui/src/standalone/app.css).
+   Everything is scoped under .mm-root; no Tailwind. */
+
+.mm-root {
+  --mm-warn: var(--warning, oklch(0.75 0.15 75));
+  --mm-ok: var(--success, oklch(0.62 0.13 150));
+  --mm-info: var(--info, oklch(0.62 0.12 205));
+  --mm-line: color-mix(in oklch, var(--foreground) 22%, transparent);
+  --mm-radius: 10px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 480px;
   color: var(--foreground);
-  font-size: 14px;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+  font-size: 13px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
 }
-.mm-page h2 {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 8px;
+.mm-root *, .mm-root *::before, .mm-root *::after { box-sizing: border-box; }
+.mm-root button { font: inherit; color: inherit; }
+.mm-muted { color: var(--muted-foreground, color-mix(in oklch, var(--foreground) 55%, transparent)); }
+.mm-small { font-size: 11px; }
+.mm-warn { color: var(--destructive); }
+.mm-spacer { flex: 1; }
+.mm-grow { flex: 1; }
+.mm-row { display: flex; align-items: center; gap: 8px; }
+.mm-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mm-center { display: grid; place-items: center; height: 100%; }
+.mm-pad { padding: 12px 14px; }
+.mm-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.mm-scroll { scrollbar-width: thin; }
+kbd { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; opacity: 0.8; }
+
+/* --- controls ---------------------------------------------------------------- */
+.mm-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--card); cursor: pointer;
+  white-space: nowrap; transition: background 0.12s, border-color 0.12s;
 }
-.mm-page li {
-  margin: 4px 0;
-  font-family: ui-monospace, monospace;
+.mm-btn:hover { background: var(--muted); }
+.mm-btn:disabled { opacity: 0.5; cursor: default; }
+.mm-btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
+.mm-btn-xs { height: 22px; padding: 0 8px; font-size: 11px; border-radius: 6px; }
+.mm-btn-primary { background: var(--primary); color: var(--primary-foreground, white); border-color: transparent; }
+.mm-btn-primary:hover { background: color-mix(in oklch, var(--primary) 88%, black); }
+.mm-btn-on { border-color: color-mix(in oklch, var(--primary) 60%, transparent); color: var(--primary); }
+.mm-icon-btn {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid transparent; background: transparent; cursor: pointer;
 }
+.mm-icon-btn:hover, .mm-icon-btn.mm-on { background: var(--muted); }
+.mm-input {
+  width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--input, var(--border)); border-radius: 8px;
+  background: var(--background); color: var(--foreground); font: inherit; outline: none;
+}
+.mm-input:focus { border-color: var(--ring, var(--primary)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent); }
+select.mm-input { padding-right: 4px; }
+.mm-chip {
+  display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px;
+  font-size: 11px; background: var(--muted); white-space: nowrap;
+}
+.mm-chip-running { background: color-mix(in oklch, var(--primary) 16%, transparent); color: var(--primary); }
+.mm-chip-waiting, .mm-chip-queued { background: color-mix(in oklch, var(--mm-warn) 22%, transparent); }
+.mm-chip-review { background: color-mix(in oklch, var(--accent) 20%, transparent); }
+.mm-chip-failed { background: color-mix(in oklch, var(--destructive) 18%, transparent); color: var(--destructive); }
+.mm-chip-done { background: color-mix(in oklch, var(--mm-ok) 18%, transparent); }
+
+/* --- map list ------------------------------------------------------------------ */
+.mm-list { max-width: 760px; width: 100%; margin: 0 auto; padding: 28px 20px; }
+.mm-list-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.mm-list-head h2 { font-size: 20px; font-weight: 600; margin: 0; }
+.mm-create { display: flex; gap: 8px; margin-bottom: 20px; }
+.mm-map-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mm-map-card {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 4px; border: 1px solid var(--border);
+  border-radius: var(--mm-radius); background: var(--card);
+}
+.mm-map-open {
+  flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px;
+  background: none; border: 0; text-align: left; cursor: pointer; border-radius: 8px;
+}
+.mm-map-open:hover { background: var(--muted); }
+.mm-guest { max-width: 360px; margin: 12vh auto 0; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; padding: 24px; }
+.mm-guest h2 { margin: 0; font-size: 20px; }
+.mm-swatches { display: flex; gap: 8px; }
+.mm-swatch { width: 24px; height: 24px; border-radius: 999px; border: 2px solid transparent; cursor: pointer; }
+.mm-swatch.mm-on { border-color: var(--foreground); }
+
+/* --- map view ----------------------------------------------------------------- */
+.mm-map { display: flex; flex-direction: column; height: 100%; min-height: 0; flex: 1; }
+.mm-header {
+  display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 10px; flex: none;
+  border-bottom: 1px solid var(--border); background: var(--background);
+}
+.mm-map-title {
+  font-size: 15px; font-weight: 600; background: none; border: 0; padding: 4px 6px; border-radius: 6px; cursor: text;
+  max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mm-map-title:hover { background: var(--muted); }
+.mm-map-title-input { max-width: 360px; }
+.mm-conn { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted-foreground); }
+.mm-conn i { width: 7px; height: 7px; border-radius: 99px; background: var(--muted-foreground); }
+.mm-conn-ws i { background: var(--mm-ok); }
+.mm-conn-longpoll i { background: var(--mm-warn); }
+.mm-conn-offline i { background: var(--destructive); }
+.mm-body { position: relative; display: flex; flex: 1; min-height: 0; }
+.mm-proposals { display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--accent) 6%, var(--background)); }
+.mm-proposal { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.mm-proposal svg { color: var(--mm-agent); }
+
+/* avatars */
+.mm-avatars { display: flex; align-items: center; }
+.mm-avatar {
+  display: inline-grid; place-items: center; width: 26px; height: 26px; margin-left: -6px; border-radius: 999px;
+  border: 2px solid var(--background); color: white; font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+}
+.mm-avatars-sm .mm-avatar { width: 20px; height: 20px; font-size: 9px; }
+.mm-avatar:first-child { margin-left: 0; }
+.mm-avatar-agent { border-radius: 7px; font-size: 12px; }
+.mm-avatar-off { opacity: 0.4; }
+.mm-avatar-more { background: var(--muted); color: var(--foreground); }
+
+/* --- canvas ------------------------------------------------------------------- */
+.mm-viewport {
+  position: relative; flex: 1; overflow: hidden; outline: none; cursor: default; touch-action: none; user-select: none;
+  -webkit-user-select: none; background:
+    radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--foreground) 9%, transparent) 1px, transparent 0) 0 0 / 22px 22px,
+    var(--background);
+}
+.mm-viewport.mm-panning { cursor: grabbing; }
+/* Its own compositor layer, so panning never repaints the cards. After a zoom
+   settles, the canvas drops and re-adds will-change to re-raster at the new scale. */
+.mm-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.mm-world.mm-reraster { will-change: auto; }
+.mm-edges { position: absolute; overflow: visible; pointer-events: none; }
+.mm-edge { fill: none; stroke: var(--mm-line); stroke-width: 1.6; }
+.mm-edge-d1 { stroke-width: 2.4; stroke: color-mix(in oklch, var(--foreground) 30%, transparent); }
+.mm-edge-ghost { stroke-dasharray: 5 4; stroke: color-mix(in oklch, var(--accent) 70%, transparent); }
+.mm-link path { fill: none; stroke: color-mix(in oklch, var(--accent) 75%, transparent); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.mm-link text { fill: var(--muted-foreground); font-size: 11px; paint-order: stroke; stroke: var(--background); stroke-width: 4px; }
+.mm-link-ghost path { stroke-dasharray: 2 4; opacity: 0.8; }
+.mm-arrowhead { fill: color-mix(in oklch, var(--accent) 75%, transparent); }
+.mm-arrowhead-ghost { fill: var(--accent); }
+.mm-ghost-arrow { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 7 5; }
+.mm-drop-target { fill: color-mix(in oklch, var(--primary) 10%, transparent); stroke: var(--primary); stroke-width: 2; stroke-dasharray: 6 4; }
+.mm-drop-line { fill: var(--primary); }
+
+/* cards */
+.mm-node {
+  position: absolute; left: 0; top: 0; display: flex; flex-direction: column; justify-content: center;
+  padding: 8px 12px; border-radius: var(--mm-radius); background: var(--card); color: var(--card-foreground, var(--foreground));
+  border: 1px solid var(--border); box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent);
+  cursor: pointer; contain: layout style;
+}
+.mm-node::before { /* kind colour accent */
+  content: ""; position: absolute; left: -1px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: var(--mm-kind, transparent);
+}
+.mm-node[style*="--mm-node-color"] { border-color: color-mix(in oklch, var(--mm-node-color) 60%, var(--border)); }
+.mm-node-title {
+  display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; line-height: 18px; word-break: break-word;
+}
+.mm-node-title .mm-kind-icon { display: inline-block; vertical-align: -1px; margin-right: 6px; color: var(--mm-kind, var(--muted-foreground)); }
+.mm-root-node {
+  padding: 12px 18px; background: var(--primary); color: var(--primary-foreground, white); border-color: transparent;
+  font-size: 16px; font-weight: 600; text-align: center; border-radius: 14px;
+  box-shadow: 0 4px 18px color-mix(in oklch, var(--primary) 30%, transparent);
+}
+.mm-root-node .mm-node-title { line-height: 22px; }
+.mm-root-node::before { display: none; }
+.mm-depth-1 { background: color-mix(in oklch, var(--primary) 7%, var(--card)); border-color: color-mix(in oklch, var(--primary) 25%, var(--border)); }
+.mm-selected { outline: 2px solid var(--primary); outline-offset: 2px; }
+.mm-remote-sel { box-shadow: 0 0 0 2px var(--mm-remote); }
+.mm-selected.mm-remote-sel { box-shadow: 0 0 0 5px var(--mm-remote); }
+.mm-dragging { opacity: 0.35; }
+.mm-uncited { opacity: 0.72; border-style: dashed; }
+.mm-badges { display: flex; align-items: center; gap: 5px; height: 16px; margin-top: 2px; overflow: hidden; }
+.mm-badge { display: inline-flex; align-items: center; gap: 2px; height: 15px; padding: 0 5px; border-radius: 4px; background: var(--muted); font-size: 10px; color: var(--muted-foreground); }
+.mm-conf-low { color: var(--destructive); }
+.mm-conf-high { color: var(--mm-ok); }
+.mm-tag { font-size: 10px; color: var(--muted-foreground); white-space: nowrap; }
+.mm-thumb { height: 15px; width: 24px; object-fit: cover; border-radius: 3px; border: 1px solid var(--border); }
+.mm-collapsed-count {
+  position: absolute; top: 50%; right: -11px; transform: translateY(-50%); min-width: 20px; height: 20px; padding: 0 5px;
+  display: grid; place-items: center; border-radius: 99px; background: var(--background); border: 1.5px solid var(--mm-line);
+  font-size: 10px; font-weight: 600;
+}
+[data-depth] .mm-collapsed-count { right: -11px; }
+.mm-new-dot { position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 99px; background: var(--primary); border: 2px solid var(--background); }
+.mm-node-agents { position: absolute; top: -9px; left: -9px; display: flex; gap: 2px; }
+.mm-harness {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: var(--primary);
+  color: white; font-size: 11px; font-weight: 700; border: 1.5px solid var(--background);
+}
+.mm-editing-badge {
+  position: absolute; bottom: calc(100% + 4px); left: 0; padding: 1px 6px; border-radius: 4px; color: white;
+  font-size: 10px; font-weight: 600; white-space: nowrap;
+}
+.mm-kind-icon { flex: none; }
+.mm-k-idea { --mm-kind: var(--primary); }
+.mm-k-research { --mm-kind: var(--mm-info); }
+.mm-k-example { --mm-kind: var(--mm-ok); }
+.mm-k-question { --mm-kind: var(--mm-warn); }
+.mm-k-decision { --mm-kind: var(--accent); }
+.mm-k-risk { --mm-kind: var(--destructive); }
+.mm-k-action { --mm-kind: color-mix(in oklch, var(--mm-ok) 60%, var(--primary)); }
+.mm-k-doc { --mm-kind: var(--muted-foreground); }
+.mm-k-topic { --mm-kind: var(--primary); }
+
+/* low zoom (LOD): simplified cards, switched by one class on the viewport so no card re-renders */
+.mm-lod-on .mm-node { box-shadow: none; }
+.mm-lod-on .mm-node:not(.mm-root-node) .mm-node-title { visibility: hidden; }
+.mm-lod-on .mm-node:not(.mm-root-node)::after { content: ""; position: absolute; left: 12px; right: 30%; top: calc(50% - 4px); height: 8px; border-radius: 4px; background: color-mix(in oklch, var(--foreground) 22%, transparent); }
+.mm-lod-on .mm-badges, .mm-lod-on .mm-editing-badge, .mm-lod-on .mm-link text { display: none; }
+
+/* status rings */
+.mm-ring { position: absolute; inset: -5px; border-radius: 14px; pointer-events: none; border: 2px solid var(--mm-agent, var(--primary)); }
+.mm-ring-queued { border-style: dashed; border-color: color-mix(in oklch, var(--foreground) 40%, transparent); }
+.mm-ring-running { animation: mm-pulse 1.6s ease-in-out infinite; }
+.mm-ring-waiting { border-color: var(--mm-warn); }
+.mm-ring-review { border-color: var(--accent); }
+.mm-ring-failed { border-color: var(--destructive); }
+.mm-ring-done { border-color: var(--mm-ok); animation: mm-fade 4s ease-out forwards; }
+.mm-ring-badge {
+  position: absolute; top: -9px; right: -9px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 99px;
+  display: grid; place-items: center; font-size: 11px; font-weight: 700; color: white;
+}
+.mm-rb-q { background: var(--mm-warn); color: var(--warning-foreground, #3a2600); }
+.mm-rb-review { background: var(--accent); }
+.mm-rb-fail { background: var(--destructive); }
+.mm-rb-done { background: var(--mm-ok); }
+@keyframes mm-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--mm-agent, var(--primary)) 45%, transparent); }
+  50% { box-shadow: 0 0 0 7px color-mix(in oklch, var(--mm-agent, var(--primary)) 0%, transparent); }
+}
+@keyframes mm-fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+
+/* write trail */
+.mm-trail { position: absolute; inset: -2px; border-radius: 12px; pointer-events: none; animation: mm-flash 1.8s ease-out forwards; }
+@keyframes mm-flash {
+  0% { background: color-mix(in oklch, var(--mm-agent) 45%, transparent); box-shadow: 0 0 0 4px color-mix(in oklch, var(--mm-agent) 50%, transparent); }
+  100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+}
+
+/* ghost proposal layer */
+.mm-ghost { background: color-mix(in oklch, var(--accent) 7%, var(--background)); border: 1.5px dashed var(--accent); box-shadow: none; opacity: 0.92; }
+.mm-ghost-tag { position: absolute; bottom: -8px; right: 8px; padding: 0 5px; font-size: 9px; border-radius: 4px; background: var(--accent); color: var(--accent-foreground, white); text-transform: uppercase; letter-spacing: 0.04em; }
+.mm-ghost-delete { border: 1.5px dashed var(--destructive); }
+.mm-ghost-delete .mm-node-text { text-decoration: line-through; text-decoration-color: var(--destructive); }
+.mm-ghost-update { border-color: var(--accent); }
+.mm-ghost-update::after { content: "~"; position: absolute; top: -8px; right: -6px; width: 16px; height: 16px; border-radius: 99px; display: grid; place-items: center; background: var(--accent); color: white; font-weight: 700; font-size: 12px; }
+.mm-ghost-moving, .mm-ghost-merge { border-style: dashed; border-color: var(--accent); }
+.mm-node-toolbar {
+  position: absolute; left: 0; top: 0; transform-origin: 0 0; display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+  background: var(--popover, var(--card)); border: 1px solid var(--border); border-radius: 8px; font-size: 11px; white-space: nowrap;
+  box-shadow: 0 6px 20px color-mix(in oklch, var(--foreground) 14%, transparent);
+}
+
+/* inline editor */
+.mm-editor {
+  position: absolute; left: 0; top: 0; padding: 8px 12px 8px 30px; margin: 0; resize: none; overflow: hidden;
+  border-radius: var(--mm-radius); border: 2px solid var(--primary); background: var(--card); color: var(--foreground);
+  font: inherit; line-height: 18px; outline: none; z-index: 2; user-select: text; -webkit-user-select: text;
+}
+.mm-editor-root { padding: 12px 18px; font-size: 16px; font-weight: 600; line-height: 22px; text-align: center; }
+.mm-drag-ghost {
+  position: absolute; left: 0; top: 0; padding: 8px 12px; border-radius: var(--mm-radius); background: var(--card);
+  border: 1.5px solid var(--primary); opacity: 0.9; pointer-events: none; box-shadow: 0 10px 30px color-mix(in oklch, var(--foreground) 20%, transparent);
+  overflow: hidden; z-index: 3;
+}
+
+/* presence cursors */
+.mm-cursor { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; z-index: 4; transition: transform 80ms linear; }
+.mm-cursor svg { display: block; fill: var(--mm-agent); stroke: white; stroke-width: 1.2; }
+.mm-cursor span { position: absolute; left: 14px; top: 14px; padding: 1px 6px; border-radius: 4px; background: var(--mm-agent); color: white; font-size: 11px; white-space: nowrap; }
+
+.mm-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted-foreground); pointer-events: none; }
+.mm-hint { position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: var(--muted-foreground); pointer-events: none; opacity: 0.8; }
+.mm-perf { position: absolute; right: 12px; bottom: 10px; padding: 3px 8px; border-radius: 6px; background: color-mix(in oklch, var(--foreground) 80%, transparent); color: var(--background); font: 11px ui-monospace, Menlo, monospace; pointer-events: none; z-index: 5; }
+
+/* --- inspector ------------------------------------------------------------------ */
+.mm-inspector { width: 340px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--background); min-height: 0; }
+.mm-insp-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--border); flex: none; }
+.mm-insp-body { flex: 1; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 14px; }
+.mm-field { display: flex; flex-direction: column; gap: 6px; }
+.mm-field > span:first-child { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-foreground); }
+.mm-body-editor { height: auto; min-height: 160px; padding: 8px 10px; line-height: 1.5; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.mm-md { font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.mm-md h3, .mm-md h4, .mm-md h5, .mm-md h6 { margin: 10px 0 4px; font-size: 13px; font-weight: 600; }
+.mm-md p { margin: 0 0 8px; }
+.mm-md ul, .mm-md ol { margin: 0 0 8px; padding-left: 18px; }
+.mm-md code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--muted); padding: 0 4px; border-radius: 4px; }
+.mm-md pre { background: var(--muted); padding: 8px; border-radius: 6px; overflow: auto; }
+.mm-md a, .mm-sources a { color: var(--primary); }
+.mm-sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mm-sources blockquote { margin: 4px 0 0; padding-left: 8px; border-left: 2px solid var(--border); color: var(--muted-foreground); font-size: 12px; }
+.mm-assets { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.mm-asset { margin: 0; }
+.mm-asset img, .mm-asset-file { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); display: grid; place-items: center; background: var(--muted); }
+.mm-asset figcaption { font-size: 11px; color: var(--muted-foreground); margin-top: 2px; }
+.mm-conf-big { font-size: 18px; font-weight: 600; }
+.mm-run-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
+.mm-proposal-box { padding: 8px; border: 1px dashed var(--accent); border-radius: 8px; }
+.mm-prop-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mm-prop-items li { display: flex; align-items: center; gap: 6px; }
+.mm-prop-items code { flex: 1; font-size: 11px; }
+
+/* --- palette --------------------------------------------------------------------- */
+.mm-palette-backdrop { position: absolute; inset: 0; z-index: 20; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; background: color-mix(in oklch, var(--background) 40%, transparent); }
+.mm-palette { width: min(560px, 92%); border: 1px solid var(--border); border-radius: 12px; background: var(--popover, var(--card)); box-shadow: 0 20px 60px color-mix(in oklch, var(--foreground) 22%, transparent); overflow: hidden; }
+.mm-palette-input { width: 100%; height: 46px; padding: 0 16px; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--foreground); font: inherit; font-size: 15px; outline: none; }
+.mm-palette-list { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow: auto; }
+.mm-palette-list li { display: flex; align-items: center; padding: 7px 10px; border-radius: 7px; cursor: pointer; }
+.mm-palette-list li.mm-active { background: var(--muted); }
+.mm-pal-node, .mm-pal-action { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.mm-pal-action > :last-child, .mm-pal-node > :last-child:not(:nth-child(2)) { margin-left: auto; font-size: 11px; }
