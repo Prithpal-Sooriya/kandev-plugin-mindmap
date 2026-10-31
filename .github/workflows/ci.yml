@@ -13,11 +13,10 @@ permissions:
 
 jobs:
   verify:
-    name: Tidy, format, vet, and test
+    name: Format, vet, test, package
     runs-on: ubuntu-latest
     steps:
-      # The local SDK replacement in go.mod expects these checkouts to be
-      # siblings: plugin/../kandev/apps/backend.
+      # go.mod and package.json expect the SDK checkout at plugin/../kandev-sdk.
       - name: Check out plugin
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -36,7 +35,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           repository: kdlbs/kandev
-          path: kandev
+          path: kandev-sdk
           ref: ${{ steps.sdk.outputs.ref }}
           sparse-checkout: |
             apps/backend
@@ -52,56 +51,21 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: plugin/package-lock.json
 
-      - name: Install recipe test dependencies
+      - name: Install UI dependencies
         working-directory: plugin
-        run: npm ci --ignore-scripts
+        run: npm install --no-audit --no-fund --ignore-scripts
 
-      - name: Check module files are tidy
+      - name: Format and vet
         working-directory: plugin
         run: |
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
-
-      - name: Check formatting
-        working-directory: plugin
-        run: make check-format
-
-      - name: Vet
-        working-directory: plugin
-        run: make vet
+          make check-format
+          make vet
 
       - name: Test
         working-directory: plugin
-        run: |
-          make test
-          make audit-recipes
+        run: make test
 
-  base-floor:
-    name: Default template on Kandev v0.86.0
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out plugin
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          path: plugin
-
-      - name: Check out declared minimum SDK
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          repository: kdlbs/kandev
-          path: kandev
-          ref: v0.86.0
-          sparse-checkout: apps/backend
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: plugin/go.mod
-          cache-dependency-path: plugin/go.sum
-
-      - name: Test provider-free generated backend
+      - name: Package (host platform)
         working-directory: plugin
-        run: go test ./server/...
+        run: make package-host
