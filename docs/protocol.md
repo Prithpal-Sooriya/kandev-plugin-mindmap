@@ -26,6 +26,7 @@ Contents:
 10. [Prompt fallback: `mindmap-patch` blocks](#10-prompt-fallback-mindmap-patch-blocks)
 11. [Error codes](#11-error-codes)
 12. [Storage](#12-storage)
+13. [Phase 1a implementation notes](#13-phase-1a-implementation-notes)
 
 ---
 
@@ -125,7 +126,7 @@ They are called through `host.api.fetch("/api/plugins/kandev-plugin-mindmap/webh
 | `submit` | POST | `SubmitRequest` + `?map_id=` | `SyncResponse` holding the ack/reject/rebase for this batch |
 | `api` | POST | `{method, path, body}` | proxies one `/api/*` call from §4 for the fallback path |
 
-The Phase 0 spike webhooks (`debug-launch`, `probe`, `logs`, `hold`, ...) are removed when Phase 1a lands. The
+The Phase 0 spike webhooks (`debug-launch`, `probe`, `logs`, `hold`, ...) were removed in Phase 1a. The
 `api` webhook gives the fallback path the full `/api` surface without one webhook per route.
 
 ## 4. Loopback HTTP routes
@@ -446,3 +447,49 @@ Example reply:
 `$KANDEV_PLUGIN_DATA_DIR/mindmap.db`, with WAL mode, `foreign_keys=ON` and `busy_timeout=5000`. Asset bytes live in
 `$KANDEV_PLUGIN_DATA_DIR/assets/<sha256[0:2]>/<sha256>`, deduplicated by hash. The `assets` table maps ids to hashes.
 `PRAGMA user_version` holds the migration number.
+
+## 13. Phase 1a implementation notes
+
+What the backend does today, including additions to and clarifications of the sections above. Clients should code
+against these.
+
+**Additions**
+
+| Route | Purpose |
+|---|---|
+| `POST /m/<t>/api/maps/<map>/undo` | reverts the caller's latest batch that is not undone yet. Response `{ops, rev}` (`OpsPayload`). The inverse ops are also broadcast to **every** WS client, including the caller, as a normal `ops` message |
+| `POST /m/<t>/api/tokens/personal` | `{label?}` → `{id, token, label}`: a personal bridge token (`mmp1.<port>.<secret>`). All-maps local tokens only |
+
+- The manifest also subscribes to `message.updated`, so `mindmap-patch` blocks in agent messages that stream in
+  through updates are still executed (each block once, keyed by `(message_id, block index)`).
+- Routes from §4 that later phases build (swarms, compile, suggest, run stop/message/approve, share, kill,
+  export.zip) answer `501 not_implemented`. `POST .../runs` works, but runs stay `queued` with no `task_id`
+  until Phase 2a plugs a Host-backed launcher into `app.Launcher`.
+
+**Clarifications for clients**
+
+- **Duplicate ops.** Catch-up after a reconnect or a restarted plugin can overlap ops you already have. Drop any
+  `ops` entry whose `rev` is not greater than your confirmed rev.
+- **Long-poll `client_id`.** Pass `client_id=<your hello client id>` on `sync` so your own submitted ops are not
+  echoed back (you get them as `ack`/`rebase` from `submit`). The `submit` answer's `cursor` is always `""`: keep
+  polling with the cursor from your last `sync`.
+- **Cursors survive restarts.** A cursor from before a plugin restart is answered from the op log (one `ops`
+  message) when the gap is at most 1,000 ops, otherwise with a `snapshot`.
+- **`session` without `map_id`** returns a participant with an empty `id`. The real per-map participant arrives in
+  the WS `welcome`.
+- **Static guest app.** `GET /m/<t>/` serves `server/web/dist/index.html` (SPA fallback for unknown paths), so the
+  build must use relative asset URLs (Vite `base: "./"`). `GET /m/<t>/assets/<name>` serves stored asset bytes when
+  `<name>` is an `as_...` id and a file from `dist/assets/` otherwise. All-maps tokens add `?map_id=`.
+- **Ghosts.** `Node.pending_proposal_id` is filled in snapshots only. Live changes to proposals arrive as `proposal`
+  messages; derive ghosts from their pending items.
+- **Propose mode.** `claim`, `ask_human` and the summary that `report` appends to the node are always live, since
+  they coordinate rather than change content. Everything else becomes proposal items.
+- **Undo limits.** `node.merge`, `question.answer` and `link.delete` cannot be undone (`conflict`). The inverse of
+  an update does not remove sources added by `add_sources`, because `NodeFields` cannot set sources. Restoring a
+  node also restores tombstoned descendants that were deleted earlier.
+- **Guests (until Phase 2d).** Each `hello` through a share token creates a new guest participant unless it resumes
+  `participant_id`. The `mm_guest` cookie is not issued yet.
+- **`attach.file_path`.** Kandev does not tell plugins a task's worktree path (`pluginsdk.Task` and `Session` have
+  no such field), so the backend accepts absolute paths under `$KANDEV_HOME/tasks` (default `~/.kandev/tasks`,
+  where Kandev puts task worktrees) or the temp dirs, after resolving symlinks. Override with
+  `MINDMAP_ATTACH_ROOTS`. `attach.url` refuses loopback, private and link-local addresses.
