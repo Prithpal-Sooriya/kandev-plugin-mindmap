@@ -194,7 +194,8 @@ func TestRestructureIsAtomicAndRetireSoftDeletes(t *testing.T) {
 			t.Fatalf("missing %q in\n%s", want, read.Text)
 		}
 	}
-	if strings.Contains(read.Text, "A1") {
+	// Match the rendered title: ids are random base62 and may contain "A1".
+	if strings.Contains(read.Text, "· A1") {
 		t.Fatalf("retired node still visible:\n%s", read.Text)
 	}
 }
