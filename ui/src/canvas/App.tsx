@@ -30,7 +30,7 @@ export function App(props: { host: HostAdapter }) {
   }, [single.data]);
 
   let body: unknown;
-  if (needsGuest) body = <GuestGate onDone={(g) => setGuest(g)} />;
+  if (needsGuest) body = <GuestGate host={host} onDone={(g) => setGuest(g)} />;
   else if (mapId) body = <MapView key={mapId} host={host} mapId={mapId} guest={guest} dev={DEV} onBack={host.canListMaps ? () => open(null) : undefined} />;
   else if (host.canListMaps) body = <MapList host={host} onOpen={open} />;
   else body = <div className="mm-center mm-muted">{single.error ? "This link is no longer valid." : "Opening map…"}</div>;
@@ -129,21 +129,36 @@ function MapList(props: { host: HostAdapter; onOpen: (id: string) => void }) {
 
 const GUEST_COLORS = ["#ef4444", "#f59e0b", "#22c55e", "#06b6d4", "#3b82f6", "#a855f7", "#ec4899"];
 
-function GuestGate(props: { onDone: (g: { name: string; color: string }) => void }) {
+function GuestGate(props: { host: HostAdapter; onDone: (g: { name: string; color: string }) => void }) {
   const [name, setName] = React.useState("");
   const [color, setColor] = React.useState(GUEST_COLORS[Math.floor(Math.random() * GUEST_COLORS.length)]!);
-  return (
-    <form className="mm-guest" onSubmit={(e: Event) => {
-      e.preventDefault();
-      if (!name.trim()) return;
-      const g = { name: name.trim().slice(0, 40), color };
+  const [busy, setBusy] = React.useState(false);
+  const submit = async (e: Event) => {
+    e.preventDefault();
+    const g = { name: name.trim().slice(0, 40), color };
+    if (!g.name || busy) return;
+    try {
+      localStorage.setItem("mm-guest", JSON.stringify(g));
+    } catch {
+      // private mode: identity lasts for this tab only
+    }
+    if (props.host.joinGuest) {
+      setBusy(true);
       try {
-        localStorage.setItem("mm-guest", JSON.stringify(g));
-      } catch {
-        // private mode: identity lasts for this tab only
+        await props.host.joinGuest(g);
+      } catch (err) {
+        const soft = err instanceof ContractError && (err.code === "not_found" || err.code === "not_implemented");
+        if (!soft) {
+          props.host.toast(err instanceof ContractError ? err.message : "Could not join.", "error");
+          setBusy(false);
+          return;
+        }
       }
-      props.onDone(g);
-    }}>
+    }
+    props.onDone(g);
+  };
+  return (
+    <form className="mm-guest" onSubmit={(e: Event) => void submit(e)}>
       <MindmapIcon size={28} />
       <h2>Join the mind map</h2>
       <p className="mm-muted">Pick a name and a colour so others can see your cursor and edits.</p>
@@ -153,7 +168,7 @@ function GuestGate(props: { onDone: (g: { name: string; color: string }) => void
           <button type="button" key={c} className={`mm-swatch${c === color ? " mm-on" : ""}`} style={{ background: c }} onClick={() => setColor(c)} aria-label={`Colour ${c}`} />
         ))}
       </div>
-      <button type="submit" className="mm-btn mm-btn-primary" disabled={!name.trim()}>Join</button>
+      <button type="submit" className="mm-btn mm-btn-primary" disabled={!name.trim() || busy}>{busy ? "Joining…" : "Join"}</button>
     </form>
   );
 }

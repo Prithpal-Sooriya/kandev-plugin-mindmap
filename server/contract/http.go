@@ -144,6 +144,30 @@ const (
 
 var ShareProviders = []ShareProvider{ShareCloudflared, ShareTailscale, ShareNgrok}
 
+// Valid reports whether p is one of the known tunnel providers.
+func (p ShareProvider) Valid() bool {
+	for _, v := range ShareProviders {
+		if v == p {
+			return true
+		}
+	}
+	return false
+}
+
+// ShareSettings are plugin-wide sharing and safety knobs (kv, not per map).
+// Zero values mean "unset": the tunnel provider defaults to cloudflared, and
+// a zero cap means no plugin-level cap. Per-map MapSettings still apply and
+// the tighter of the two wins. RequireGuestRunApproval is off by default.
+type ShareSettings struct {
+	Provider                ShareProvider `json:"provider,omitempty"`
+	MaxConcurrentRuns       int           `json:"max_concurrent_runs,omitempty"`
+	MaxNodes                int           `json:"max_nodes,omitempty"`
+	MaxDepth                int           `json:"max_depth,omitempty"`
+	MaxSubagents            int           `json:"max_subagents,omitempty"`
+	MaxMinutes              int           `json:"max_minutes,omitempty"`
+	RequireGuestRunApproval bool          `json:"require_guest_run_approval,omitempty"`
+}
+
 // ShareStatus is the tunnel lifecycle.
 type ShareStatus string
 

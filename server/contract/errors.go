@@ -32,7 +32,8 @@ const (
 	ErrResync           ErrorCode = "resync"            // client is too far behind; take a fresh snapshot
 	ErrVersion          ErrorCode = "version"           // contract version not supported
 	ErrNotImplemented   ErrorCode = "not_implemented"
-	ErrUnavailable      ErrorCode = "unavailable" // host API or tunnel unavailable; retry later
+	ErrNotInstalled     ErrorCode = "not_installed" // tunnel binary is not on PATH; message includes the install command
+	ErrUnavailable      ErrorCode = "unavailable"   // host API or tunnel unavailable; retry later
 	ErrInternal         ErrorCode = "internal"
 )
 
@@ -40,7 +41,7 @@ var ErrorCodes = []ErrorCode{
 	ErrBadRequest, ErrInvalidOp, ErrNotFound, ErrUnauthorized, ErrForbidden, ErrNotARun, ErrRunEnded,
 	ErrCycle, ErrRootImmutable, ErrDeleted, ErrConflict, ErrClaimed, ErrLocked, ErrBudgetExceeded,
 	ErrRateLimited, ErrTooLarge, ErrUnsupportedMedia, ErrFetchFailed, ErrProposalClosed, ErrResync,
-	ErrVersion, ErrNotImplemented, ErrUnavailable, ErrInternal,
+	ErrVersion, ErrNotImplemented, ErrNotInstalled, ErrUnavailable, ErrInternal,
 }
 
 // HTTPStatus maps a code to the HTTP status used on loopback and webhook
@@ -68,10 +69,10 @@ func (c ErrorCode) HTTPStatus() int {
 		return 429
 	case ErrNotImplemented:
 		return 501
+	case ErrNotInstalled, ErrUnavailable:
+		return 503
 	case ErrFetchFailed:
 		return 502
-	case ErrUnavailable:
-		return 503
 	default:
 		return 500
 	}

@@ -43,4 +43,16 @@ const (
 	RunTokenGrace      = 10 * time.Minute // after a terminal run status
 	PresenceTimeout    = 30 * time.Second // participant shown offline after this
 	AgentToolTimeout   = 25 * time.Second // Kandev cuts plugin calls at 30s
+
+	// Per guest or local session (protocol §2). API is every /api/ call;
+	// ops are counted separately inside submit. Asset uploads are also an
+	// API call, and have their own per-minute cap.
+	OpsPerSec          = 50
+	OpsBurst           = 200
+	APIPerSec          = 20
+	APIBurst           = 60
+	RunStartsPerMin    = 10
+	AssetUploadsPerMin = 20
+	GuestJoinsPerMin   = 10 // new guest sessions minted per share link
+	GuestIdleTTL       = 30 * 24 * time.Hour
 )

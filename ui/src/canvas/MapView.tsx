@@ -13,6 +13,7 @@ import { Icon, ICONS } from "./icons";
 import { Inspector } from "./Inspector";
 import type { Command } from "./keys";
 import { Palette, type PaletteAction } from "./Palette";
+import { ShareControls } from "./ShareDialog";
 
 function fontFamily(): string {
   const v = typeof document !== "undefined" ? getComputedStyle(document.documentElement).getPropertyValue("--font-sans").trim() : "";
@@ -112,6 +113,7 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
           </button>
         ) : null}
         <AvatarStack people={people as Participant[]} max={6} />
+        <ShareControls host={host} mapId={mapId} guests={[...e.participants.values()].filter((p) => p.kind === "human" && !p.is_host).length} />
         <button type="button" className="mm-btn mm-btn-sm" onClick={() => onCommand({ type: "palette" })} aria-label="Command palette">
           <Icon d={ICONS.search} /> <kbd>{IS_MAC ? "⌘K" : "Ctrl K"}</kbd>
         </button>

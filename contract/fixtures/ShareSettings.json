@@ -1,0 +1,11 @@
+[
+  {
+    "provider": "cloudflared",
+    "max_concurrent_runs": 4,
+    "max_nodes": 60,
+    "max_depth": 4,
+    "max_subagents": 4,
+    "max_minutes": 30,
+    "require_guest_run_approval": true
+  }
+]

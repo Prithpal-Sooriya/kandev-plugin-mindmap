@@ -49,6 +49,7 @@ var fixtureTypes = map[string]func() any{
 	"MessageRunRequest":     func() any { return &MessageRunRequest{} },
 	"AgentProfile":          func() any { return &AgentProfile{} },
 	"ShareLink":             func() any { return &ShareLink{} },
+	"ShareSettings":         func() any { return &ShareSettings{} },
 	"Patch":                 func() any { return &Patch{} },
 }
 

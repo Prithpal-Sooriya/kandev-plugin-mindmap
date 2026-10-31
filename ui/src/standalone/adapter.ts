@@ -109,6 +109,11 @@ export function standaloneAdapter(loc: Location = location): { adapter: HostAdap
       history.replaceState(null, "", u);
     },
     participant: () => participant,
+    joinGuest: async (g) => {
+      const pt = await call<Participant>("POST", "/join", g);
+      participant = pt;
+      return pt;
+    },
     guestIdentity: isShare
       ? () => {
           try {
