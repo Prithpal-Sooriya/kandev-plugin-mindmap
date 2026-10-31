@@ -47,6 +47,7 @@ export const ICONS = {
   fit: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
   ghost: "M5 21V10a7 7 0 0 1 14 0v11l-3-2l-2 2l-2-2l-2 2l-2-2zM9 10h.01M15 10h.01",
   close: "M6 6l12 12M18 6L6 18",
+  warn: "M12 2L2 20h20L12 2zm0 15a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm1-5h-2V8h2v4z",
   check: "M5 12l4 4L19 6",
   link: "M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1",
   image: "M4 5h16v14H4zM4 15l4-4l5 5M14 14l2-2l4 4M15 9h.01",

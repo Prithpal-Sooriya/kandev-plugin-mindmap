@@ -5,7 +5,7 @@ import {
   ContractError, LIMITS, buildParentIndex, compareSiblings, newId, orderBetween, type ContractErrorBody, type MapNode,
   type NodeKind, type Presence, type ReviewProposalRequest,
 } from "../contract";
-import { childrenOf, cloneDoc, type Doc } from "../core/doc";
+import { childrenOf, cloneDoc, emptyDoc, applyOp, type Doc } from "../core/doc";
 import { SyncEngine, type OpDraft } from "../core/sync";
 import { UndoStack, inverseOf } from "../core/undo";
 import type { HostAdapter } from "../host/adapter";
@@ -48,10 +48,16 @@ export class MapController {
   paletteOpen = false;
   /** Characters typed after ⌘K but before the palette input mounted. */
   paletteSeed = "";
+  dockOpen = false;
+  followingRun: string | null = null;
+  replayRev: number | null = null;
+  replayDoc: import("../core/doc").Doc | null = null;
+  replayOps: import("../contract").Op[] = [];
   connState: ConnState = "connecting";
   version = 0;
   private lockTimer: ReturnType<typeof setInterval> | null = null;
   private trailTimer: ReturnType<typeof setInterval> | null = null;
+  private lastTrailTime = 0;
   private presence: Omit<Presence, "participant_id" | "updated_at"> = {};
   /** Last layout time in ms (perf overlay and dev measurements). */
   lastLayoutMs = 0;
@@ -128,6 +134,7 @@ export class MapController {
   }
 
   get view(): Doc {
+    if (this.replayDoc) return this.replayDoc;
     return this.engine.view;
   }
 
@@ -455,6 +462,44 @@ export class MapController {
   relayoutAll(): void {
     this.layoutEngine = new TreeLayout();
     this.displayCache = null;
+    this.bump();
+  }
+
+  async startReplay() {
+    if (this.replayRev !== null) return;
+    const rev = this.engine.confirmed.rev;
+    this.replayRev = rev;
+    this.replayDoc = this.engine.confirmed;
+    this.bump();
+    try {
+      if (this.host.api.getOps) {
+        const res = await this.host.api.getOps(this.mapId, 1, rev);
+        this.replayOps = res.ops;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  setReplayRev(rev: number) {
+    if (!this.replayOps.length) return;
+    this.replayRev = rev;
+    let d = emptyDoc();
+    d.map = this.engine.confirmed.map;
+    for (const op of this.replayOps) {
+      if (op.rev > rev) continue;
+      try {
+        applyOp(d, op);
+      } catch (e) {}
+    }
+    this.replayDoc = d;
+    this.bump();
+  }
+
+  stopReplay() {
+    this.replayRev = null;
+    this.replayDoc = null;
+    this.replayOps = [];
     this.bump();
   }
 

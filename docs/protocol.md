@@ -143,6 +143,7 @@ contract types. Errors return `{"error": Error}` with the HTTP status from `Erro
 | `GET /m/<t>/api/maps/<map>/snapshot` | `Snapshot` |
 | `GET /m/<t>/api/maps/<map>/sync?cursor=&wait=` | long-poll (§6) |
 | `POST /m/<t>/api/maps/<map>/ops` | `SubmitRequest` → `SyncResponse` |
+| `GET /m/<t>/api/maps/<map>/ops` | `?from=<rev>&to=<rev>` → `{ops: Op[]}` |
 | `POST /m/<t>/api/maps/<map>/runs` | `StartRunRequest` → `StartRunsResponse` |
 | `POST /m/<t>/api/maps/<map>/swarms` | `SwarmRequest` → `StartRunsResponse` |
 | `POST /m/<t>/api/maps/<map>/compile` | `CompileRequest` → `StartRunsResponse` (section runs + synthesis run) |

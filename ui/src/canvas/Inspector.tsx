@@ -15,6 +15,7 @@ export function Inspector(props: { ctl: MapController; onClose: () => void }) {
   const [bodyEdit, setBodyEdit] = React.useState(false);
   const [title, setTitle] = React.useState(node?.title ?? "");
   const [tags, setTags] = React.useState((node?.tags ?? []).join(", "));
+  const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
   React.useEffect(() => {
     setTitle(node?.title ?? "");
     setTags((node?.tags ?? []).join(", "));
@@ -32,7 +33,13 @@ export function Inspector(props: { ctl: MapController; onClose: () => void }) {
       <aside className="mm-inspector" aria-label="Inspector">
         <header className="mm-insp-head"><strong>Inspector</strong><button type="button" className="mm-icon-btn" onClick={props.onClose} aria-label="Close inspector"><Icon d={ICONS.close} /></button></header>
         <p className="mm-muted mm-pad">Select a node to see its details.</p>
-      </aside>
+      {lightboxUrl && (
+        <div className="mm-lightbox" onClick={() => setLightboxUrl(null)}>
+          <img src={lightboxUrl} alt="Full size" />
+          <button type="button" className="mm-icon-btn mm-lightbox-close"><Icon d={ICONS.close} /></button>
+        </div>
+      )}
+    </aside>
     );
   }
   const lockedBy = ctl.lockedBy(node.id, "body_md");
@@ -80,7 +87,11 @@ export function Inspector(props: { ctl: MapController; onClose: () => void }) {
               {NODE_KINDS.filter((k) => k !== "doc" || node.kind === "doc").map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
             </select>
           </label>
-          {node.confidence !== undefined ? <div className="mm-field"><span>Confidence</span><div className="mm-conf-big">{Math.round(node.confidence * 100)}%</div></div> : null}
+          <label className="mm-field">
+            <span>Confidence</span>
+            <input type="range" className="mm-input-range" min="0" max="100" value={Math.round((node.confidence ?? 0.5) * 100)} onChange={(e: any) => ctl.update(node.id, { confidence: parseInt(e.target.value) / 100 })} />
+            <div className="mm-conf-big">{node.confidence !== undefined ? Math.round(node.confidence * 100) + "%" : "-"}</div>
+          </label>
         </div>
         <label className="mm-field">
           <span>Tags</span>
@@ -122,6 +133,7 @@ export function Inspector(props: { ctl: MapController; onClose: () => void }) {
                 <li key={s.url}>
                   <a href={s.url} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a>
                   {s.quote ? <blockquote>{s.quote}</blockquote> : null}
+                  {s.accessed_at ? <div className="mm-muted mm-small">Accessed: {new Date(s.accessed_at).toLocaleDateString()}</div> : null}
                 </li>
               ))}
             </ul>
@@ -130,7 +142,7 @@ export function Inspector(props: { ctl: MapController; onClose: () => void }) {
         {node.assets?.length ? (
           <div className="mm-field">
             <span>Attachments ({node.assets.length})</span>
-            <div className="mm-assets">{node.assets.map((a) => <AssetThumb key={a.id} ctl={ctl} id={a.id} kind={a.kind} caption={a.caption ?? a.filename ?? a.mime} />)}</div>
+            <div className="mm-assets">{node.assets.map((a) => <AssetThumb key={a.id} ctl={ctl} id={a.id} kind={a.kind} caption={a.caption ?? a.filename ?? a.mime} onClick={(url) => setLightboxUrl(url)} />)}</div>
           </div>
         ) : null}
         {runs.length ? (
@@ -142,6 +154,7 @@ export function Inspector(props: { ctl: MapController; onClose: () => void }) {
                 <span>{r.profile_name ?? r.template}{r.lens ? ` · ${r.lens}` : ""}</span>
                 <span className={`mm-chip mm-chip-${r.status}`}>{r.status}{r.waiting_reason ? ` (${r.waiting_reason})` : ""}</span>
                 {r.last_output ? <div className="mm-muted mm-ellipsis">{r.last_output}</div> : null}
+                <LiveOutput ctl={ctl} run={r} />
               </div>
             ))}
             <AvatarStack people={agents} size="sm" />
@@ -161,8 +174,16 @@ export function Inspector(props: { ctl: MapController; onClose: () => void }) {
             </ul>
           </div>
         ))}
+        <TimeTravel ctl={ctl} />
+
         <p className="mm-muted mm-small">Added by {author?.name ?? "someone"} · rev {node.rev}</p>
       </div>
+      {lightboxUrl && (
+        <div className="mm-lightbox" onClick={() => setLightboxUrl(null)}>
+          <img src={lightboxUrl} alt="Full size" />
+          <button type="button" className="mm-icon-btn mm-lightbox-close"><Icon d={ICONS.close} /></button>
+        </div>
+      )}
     </aside>
   );
 }
@@ -189,7 +210,7 @@ function BodyEditor(props: { initial: string; onDone: (text: string | null) => v
   );
 }
 
-function AssetThumb(props: { ctl: MapController; id: string; kind: string; caption: string }) {
+function AssetThumb(props: { ctl: MapController; id: string; kind: string; caption: string; onClick?: (url: string) => void }) {
   const [url, setUrl] = React.useState(null as string | null);
   React.useEffect(() => {
     let live = true;
@@ -200,9 +221,74 @@ function AssetThumb(props: { ctl: MapController; id: string; kind: string; capti
   }, [props.id]);
   return (
     <figure className="mm-asset">
-      {props.kind === "image" && url ? <img src={url} alt={props.caption} /> : <div className="mm-asset-file"><Icon d={ICONS.image} /></div>}
+      {props.kind === "image" && url ? <img src={url} alt={props.caption} onClick={() => props.onClick?.(url)} style={{ cursor: "zoom-in" }} /> : <div className="mm-asset-file"><Icon d={ICONS.image} /></div>}
       <figcaption>{props.caption}</figcaption>
     </figure>
   );
 }
 
+
+function LiveOutput(props: { ctl: MapController; run: import("../contract").Run }) {
+  const { ctl, run } = props;
+  const fallback = ctl.engine.output.get(run.id) ?? [];
+  const lines = ctl.host.useLiveOutput?.(run) ?? fallback;
+  
+  if (!lines.length) return null;
+  return (
+    <div className="mm-run-live-output mm-scroll">
+      {lines.map((l, i) => (
+        <div key={i} className="mm-output-line">
+          {l.kind === "tool" ? <strong>{l.text}</strong> : <span>{l.text}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TimeTravel(props: { ctl: MapController }) {
+  const { ctl } = props;
+  if (ctl.replayRev === null) {
+    return (
+      <div className="mm-field">
+        <button type="button" className="mm-btn mm-btn-primary" onClick={() => ctl.startReplay()}>Time Travel Replay</button>
+      </div>
+    );
+  }
+  
+  const minRev = 1;
+  const maxRev = ctl.engine.confirmed.rev;
+  
+  return (
+    <div className="mm-field mm-time-travel">
+      <div className="mm-row">
+        <strong>Time Travel</strong>
+        <span className="mm-spacer" />
+        <button type="button" className="mm-icon-btn" onClick={() => ctl.stopReplay()}><Icon d={ICONS.close} /></button>
+      </div>
+      <input 
+        type="range" 
+        className="mm-input-range" 
+        min={minRev} 
+        max={maxRev} 
+        value={ctl.replayRev} 
+        onChange={(e: any) => ctl.setReplayRev(parseInt(e.target.value))} 
+      />
+      <div className="mm-row mm-small mm-muted">
+        <span>Rev {ctl.replayRev} / {maxRev}</span>
+        <span className="mm-spacer" />
+        <button 
+          type="button" 
+          className="mm-btn mm-btn-xs" 
+          onClick={async () => {
+            if (ctl.host.api.forkMap) {
+              const m = await ctl.host.api.forkMap(ctl.mapId, ctl.replayRev!);
+              ctl.host.navigate(`/mindmap?map=${m.id}`);
+            }
+          }}
+        >
+          Fork from here
+        </button>
+      </div>
+    </div>
+  );
+}

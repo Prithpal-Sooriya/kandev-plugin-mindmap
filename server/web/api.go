@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"strconv"
 	"time"
 
 	contractfiles "kandev-plugin-mindmap/contract"
@@ -353,4 +354,34 @@ func (s *Server) invokeTool(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res := s.tools.Invoke(ctx, tools.Caller{Transport: contract.TransportBridge, Token: tok}, r.PathValue("name"), body)
 	writeJSON(w, 200, res)
+}
+
+func (s *Server) opsRange(w http.ResponseWriter, r *http.Request, p *principal) {
+	mapID := r.PathValue("map")
+	if !p.canAccess(mapID) {
+		writeErr(w, contract.Errf(contract.ErrNotFound, "map not found"))
+		return
+	}
+	from, to := r.URL.Query().Get("from"), r.URL.Query().Get("to")
+	if from == "" || to == "" {
+		writeErr(w, contract.Errf(contract.ErrBadRequest, "from and to are required"))
+		return
+	}
+	
+	fromRev, err := strconv.ParseInt(from, 10, 64)
+	if err != nil {
+		writeErr(w, contract.Errf(contract.ErrBadRequest, "from must be an integer"))
+		return
+	}
+	toRev, err := strconv.ParseInt(to, 10, 64)
+	if err != nil {
+		writeErr(w, contract.Errf(contract.ErrBadRequest, "to must be an integer"))
+		return
+	}
+	ops, err := s.svc.Store.OpsSince(mapID, fromRev - 1, int(toRev - fromRev + 1))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ops": ops})
 }

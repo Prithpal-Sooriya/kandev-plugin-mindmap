@@ -43,6 +43,8 @@ export function mapApi(call: ApiCall): MapApi {
     startRun: async (mapId, req) =>
       (await call<{ runs: Run[] }>("POST", `/maps/${encodeURIComponent(mapId)}/runs`, req)).runs,
     undo: (mapId) => call<{ ops: Op[]; rev: number }>("POST", `/maps/${encodeURIComponent(mapId)}/undo`, {}),
+    getOps: (mapId, from, to) => call<{ ops: Op[] }>("GET", `/maps/${encodeURIComponent(mapId)}/ops?from=${from}&to=${to}`),
+    forkMap: (mapId, rev) => call<MindMap>("POST", `/maps/${encodeURIComponent(mapId)}/fork`, { rev }),
   };
 }
 

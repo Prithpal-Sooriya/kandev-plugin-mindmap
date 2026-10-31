@@ -21,6 +21,8 @@ export interface MapApi {
   startRun(mapId: string, req: StartRunRequest): Promise<Run[]>;
   /** Server-side per-author undo (protocol §13): reverts the caller's latest batch. */
   undo(mapId: string): Promise<{ ops: Op[]; rev: number }>;
+  getOps?(mapId: string, from: number, to: number): Promise<{ ops: Op[] }>;
+  forkMap?(mapId: string, rev: number): Promise<MindMap>;
 }
 
 export interface HostAdapter {
