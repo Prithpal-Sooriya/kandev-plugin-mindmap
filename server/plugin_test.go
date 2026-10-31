@@ -30,6 +30,13 @@ func (r *recMessenger) Send(_ context.Context, _, _, text string) error {
 }
 
 func newTestPlugin(t *testing.T) *mindmapPlugin {
+	p, _ := newTestPluginHost(t)
+	return p
+}
+
+// newTestPluginHost is a plugin wired to a fake Kandev host: the real
+// launcher, profile lookup and messenger run against it.
+func newTestPluginHost(t *testing.T) (*mindmapPlugin, *fakeHost) {
 	t.Helper()
 	t.Setenv("KANDEV_PLUGIN_DATA_DIR", t.TempDir())
 	p := newPlugin()
@@ -37,8 +44,9 @@ func newTestPlugin(t *testing.T) *mindmapPlugin {
 		t.Fatal(p.initErr)
 	}
 	t.Cleanup(p.close)
-	p.svc.Launcher = &app.FakeLauncher{}
-	return p
+	h := newFakeHost()
+	p.SetHost(h)
+	return p, h
 }
 
 func webhook(t *testing.T, p *mindmapPlugin, key, method, query string, body any) (int32, []byte) {
@@ -143,7 +151,7 @@ func TestWebhooksSessionApiSyncAsset(t *testing.T) {
 func startRun(t *testing.T, p *mindmapPlugin, m contract.Map, transport contract.ToolTransport) store.RunRecord {
 	t.Helper()
 	host, _ := p.store.HostParticipant(m.ID)
-	r, err := p.svc.StartRun(context.Background(), store.NewRun{MapID: m.ID, NodeID: m.RootID, Transport: transport, StartedBy: host.ID})
+	r, err := p.svc.StartRun(context.Background(), app.RunSpec{NewRun: store.NewRun{MapID: m.ID, NodeID: m.RootID, ProfileID: "prof-claude", Transport: transport, StartedBy: host.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}

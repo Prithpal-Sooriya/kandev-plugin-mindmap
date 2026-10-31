@@ -32,6 +32,10 @@ type mindmapPlugin struct {
 	impl    *tools.Tools
 	web     *web.Server
 	initErr error
+
+	cache hostCache
+	early earlyEvents
+	stop  chan struct{}
 }
 
 var (
@@ -63,17 +67,28 @@ func (p *mindmapPlugin) init() error {
 	p.store, p.hub = st, hub.New()
 	p.svc = app.New(st, p.hub)
 	p.svc.Messenger = hostMessenger{p}
+	p.svc.Launcher = hostLauncher{p}
+	p.svc.Profiles = p.cachedProfiles
+	p.svc.DefaultProfile = p.defaultProfile
+	p.svc.OnTaskBound = p.onTaskBound
 	p.tools, p.impl = tools.NewDispatcher(p.svc)
 	p.web = web.New(p.svc, p.tools)
-	p.web.Profiles = p.listProfiles
+	p.web.Profiles = p.cachedProfiles
+	p.web.Repos = p.listRepos
 	if _, err := p.web.Start(); err != nil {
 		return fmt.Errorf("start loopback server: %w", err)
 	}
+	p.stop = make(chan struct{})
+	go p.watchTimeBudgets(p.stop)
 	return nil
 }
 
 // close releases resources (tests).
 func (p *mindmapPlugin) close() {
+	if p.stop != nil {
+		close(p.stop)
+		p.stop = nil
+	}
 	if p.web != nil {
 		_ = p.web.Close()
 	}
@@ -97,11 +112,20 @@ func (m hostMessenger) Send(ctx context.Context, taskID, sessionID, text string)
 	return err
 }
 
-func harnessOf(agentID string) contract.Harness {
-	a := strings.ToLower(agentID)
-	for _, h := range []contract.Harness{contract.HarnessClaude, contract.HarnessCursor, contract.HarnessCodex, contract.HarnessPi} {
-		if strings.Contains(a, string(h)) {
-			return h
+// harnessOf detects the harness from a profile's agent display name
+// ("Claude", "Pi"), then its profile name and agent id, by whole word, so
+// "Copilot" is not Pi.
+func harnessOf(names ...string) contract.Harness {
+	for _, n := range names {
+		words := strings.FieldsFunc(strings.ToLower(n), func(r rune) bool {
+			return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+		})
+		for _, w := range words {
+			for _, h := range []contract.Harness{contract.HarnessClaude, contract.HarnessCursor, contract.HarnessCodex, contract.HarnessPi} {
+				if w == string(h) {
+					return h
+				}
+			}
 		}
 	}
 	return contract.HarnessOther
@@ -120,11 +144,12 @@ func (p *mindmapPlugin) listProfiles(ctx context.Context) ([]contract.AgentProfi
 			return nil, err
 		}
 		for _, it := range items {
-			name := it.DisplayName
+			// DisplayName is the agent's name ("Claude"); Name is the profile's.
+			name := it.Name
 			if name == "" {
-				name = it.Name
+				name = it.DisplayName
 			}
-			out = append(out, contract.AgentProfile{ID: it.ID, Name: name, Harness: harnessOf(it.AgentID)})
+			out = append(out, contract.AgentProfile{ID: it.ID, Name: name, Harness: harnessOf(it.DisplayName, it.Name, it.AgentID)})
 		}
 		if info == nil || !info.HasMore {
 			break

@@ -34,7 +34,12 @@ func (p *mindmapPlugin) OnEvent(ctx context.Context, e *pluginsdk.Event) error {
 	}
 	run, err := p.store.RunByTask(taskID)
 	if err != nil {
-		return nil // not a mind map run
+		// Not a mind map run, or a run whose task id is not recorded yet.
+		switch e.EventType {
+		case "task_session.state_changed", "agent.completed", "agent.failed", "message.added", "message.updated":
+			p.early.add(taskID, e)
+		}
+		return nil
 	}
 	switch e.EventType {
 	case "task_session.state_changed":
@@ -109,7 +114,9 @@ func (p *mindmapPlugin) onMessage(ctx context.Context, run store.RunRecord, even
 		}
 		p.svc.RecordOutput(run, []contract.OutputLine{{TS: time.Now().UTC(), Kind: outputKind(str(pl, "type")), Text: text}})
 	}
-	if run.Transport == contract.TransportPrompt {
+	// Bridge runs (Pi, unknown harnesses) carry the patch fallback too, in
+	// case the agent has no bridge tools.
+	if run.Transport == contract.TransportPrompt || run.Transport == contract.TransportBridge {
 		p.runPatches(ctx, run, str(pl, "message_id"), content)
 	}
 }

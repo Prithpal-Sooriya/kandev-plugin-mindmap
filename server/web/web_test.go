@@ -88,7 +88,7 @@ func TestTokenProblemsAre404OnGuestRoutes(t *testing.T) {
 	share, _, _ := e.st.IssueToken(contract.TokenShare, 0, e.m.ID, "", "", "", "", 0)
 	revoked, info, _ := e.st.IssueToken(contract.TokenLocal, 0, e.m.ID, "", e.host.ID, "", "", time.Hour)
 	_ = e.st.RevokeToken(info.ID)
-	run, _ := e.svc.StartRun(context.Background(), store.NewRun{MapID: e.m.ID, NodeID: e.m.RootID, StartedBy: e.host.ID})
+	run, _ := e.svc.StartRun(context.Background(), app.RunSpec{NewRun: store.NewRun{MapID: e.m.ID, NodeID: e.m.RootID, StartedBy: e.host.ID}})
 	runTok := e.svc.Launcher.(*app.FakeLauncher).Launches[0].RunToken
 	_ = run
 	cases := []struct {
@@ -135,7 +135,7 @@ func TestTokenProblemsAre404OnGuestRoutes(t *testing.T) {
 
 func TestBridgeToolCall(t *testing.T) {
 	e := newEnv(t)
-	if _, err := e.svc.StartRun(context.Background(), store.NewRun{MapID: e.m.ID, NodeID: e.m.RootID, StartedBy: e.host.ID}); err != nil {
+	if _, err := e.svc.StartRun(context.Background(), app.RunSpec{NewRun: store.NewRun{MapID: e.m.ID, NodeID: e.m.RootID, StartedBy: e.host.ID}}); err != nil {
 		t.Fatal(err)
 	}
 	runTok := e.svc.Launcher.(*app.FakeLauncher).Launches[0].RunToken
@@ -264,7 +264,7 @@ func TestWSHubTwoClients(t *testing.T) {
 		t.Fatalf("pong: %s", m.Type)
 	}
 	// Run updates reach every client.
-	if _, err := e.svc.StartRun(context.Background(), store.NewRun{MapID: e.m.ID, NodeID: id, StartedBy: e.host.ID}); err != nil {
+	if _, err := e.svc.StartRun(context.Background(), app.RunSpec{NewRun: store.NewRun{MapID: e.m.ID, NodeID: id, StartedBy: e.host.ID}}); err != nil {
 		t.Fatal(err)
 	}
 	if m := b.read(contract.MsgPresence, contract.MsgOps); m.Type != contract.MsgRun {

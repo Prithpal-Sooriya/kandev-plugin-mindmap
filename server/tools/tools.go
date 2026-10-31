@@ -36,6 +36,7 @@ func NewDispatcher(svc *app.Service) (*Dispatcher, *Tools) {
 	t := New(svc)
 	d := NewStub()
 	t.Register(d)
+	svc.Outline = t.Outline
 	return d, t
 }
 
