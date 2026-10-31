@@ -122,8 +122,10 @@ type Service struct {
 
 // New builds a service with no-op Kandev side effects.
 func New(st *store.Store, h *hub.Hub) *Service {
-	return &Service{Store: st, Hub: h, Launcher: NoopLauncher{}, Messenger: NoopMessenger{}, Logf: log.Printf,
+	s := &Service{Store: st, Hub: h, Launcher: NoopLauncher{}, Messenger: NoopMessenger{}, Logf: log.Printf,
 		origins: map[string]bool{}, lastOutput: map[string]time.Time{}}
+	s.Stops = RunStopper{Svc: s}
+	return s
 }
 
 // SetPort records the loopback port (bridge tokens embed it).

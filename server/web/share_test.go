@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -282,7 +283,7 @@ func (e *env) dialShare(raw, cookie, clientID, resume string) string {
 
 func TestTunnelCannotReachHostRoutes(t *testing.T) {
 	e := newEnv(t)
-	run, err := e.svc.StartRun(context.Background(), store.NewRun{MapID: e.m.ID, NodeID: e.m.RootID, StartedBy: e.host.ID})
+	run, err := e.svc.StartRun(context.Background(), app.RunSpec{NewRun: store.NewRun{MapID: e.m.ID, NodeID: e.m.RootID, StartedBy: e.host.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +404,7 @@ func TestRunCapsApprovalAndKill(t *testing.T) {
 		t.Fatalf("second run: %d %s", resp.StatusCode, body)
 	}
 
-	on := contract.MapSettings{RequireGuestRunApproval: true}
+	on := contract.MapSettings{MaxConcurrentRun: 1, RequireGuestRunApproval: true}
 	op = contract.Op{ID: store.NewID(contract.PrefixOp), MapID: e.m.ID, Type: contract.OpMapUpdate, Payload: &contract.MapUpdatePayload{Settings: &on}}
 	resp, body = e.do("POST", "/m/"+e.token+"/api/maps/"+e.m.ID+"/ops", contract.SubmitRequest{ClientID: "h", Ops: []contract.Op{op}}, nil)
 	if resp.StatusCode != 200 {
@@ -419,10 +420,35 @@ func TestRunCapsApprovalAndKill(t *testing.T) {
 		t.Fatalf("join: %d %s", resp.StatusCode, body)
 	}
 	ck := resp.Cookies()[0]
-	resp, body = e.do("POST", "/m/"+raw+"/api/maps/"+e.m.ID+"/runs", contract.StartRunRequest{NodeID: e.m.RootID, Template: contract.TemplateResearch}, map[string]string{"Cookie": ck.Name + "=" + ck.Value})
-	if resp.StatusCode != 403 || !strings.Contains(string(body), "approve") {
+	guestHdr := map[string]string{"Cookie": ck.Name + "=" + ck.Value}
+	// A held guest run is queued even at the cap; it does not count until approved.
+	resp, body = e.do("POST", "/m/"+raw+"/api/maps/"+e.m.ID+"/runs", contract.StartRunRequest{NodeID: e.m.RootID, Template: contract.TemplateResearch}, guestHdr)
+	var held contract.StartRunsResponse
+	if resp.StatusCode != 200 || json.Unmarshal(body, &held) != nil || len(held.Runs) != 1 {
 		t.Fatalf("guest run: %d %s", resp.StatusCode, body)
 	}
+	if r := held.Runs[0]; r.Status != contract.RunWaiting || r.WaitingReason != contract.WaitingApproval || r.TaskID != "" {
+		t.Fatalf("guest run not held: %+v", r)
+	}
+	approve := "/api/runs/" + held.Runs[0].ID + "/approve"
+	resp, body = e.do("POST", "/m/"+raw+approve, map[string]any{}, guestHdr)
+	if resp.StatusCode != 403 {
+		t.Fatalf("guest approved: %d %s", resp.StatusCode, body)
+	}
+	resp, body = e.do("POST", "/m/"+e.token+approve, map[string]any{}, nil)
+	if resp.StatusCode != 403 || errCode(t, body) != contract.ErrBudgetExceeded {
+		t.Fatalf("approve over cap: %d %s", resp.StatusCode, body)
+	}
+	if _, err := e.svc.StopRun(context.Background(), started.Runs[0].ID, e.host.ID, "make room"); err != nil {
+		t.Fatal(err)
+	}
+	resp, body = e.do("POST", "/m/"+e.token+approve, map[string]any{}, nil)
+	var approved contract.StartRunsResponse
+	if resp.StatusCode != 200 || json.Unmarshal(body, &approved) != nil || len(approved.Runs) != 1 || approved.Runs[0].TaskID == "" {
+		t.Fatalf("approve: %d %s", resp.StatusCode, body)
+	}
+	launches := e.svc.Launcher.(*app.FakeLauncher).Requests()
+	guestTok := launches[len(launches)-1].RunToken
 	hold, err := e.svc.GuestRunNeedsApproval(e.m.ID, e.host.ID)
 	if err != nil || hold {
 		t.Fatalf("host held: %v %v", hold, err)
@@ -433,21 +459,24 @@ func TestRunCapsApprovalAndKill(t *testing.T) {
 		t.Fatalf("audit: %d %s", resp.StatusCode, body)
 	}
 
-	var stopped stopHook
-	e.svc.Stops = &stopped
+	msgs := &recordMessenger{}
+	e.svc.Messenger = msgs
 	resp, _ = e.do("POST", "/m/"+e.token+"/api/kill", map[string]any{}, nil)
 	if resp.StatusCode != 204 {
 		t.Fatalf("kill %d", resp.StatusCode)
 	}
-	if stopped.n != 1 {
-		t.Fatalf("StopAllRuns called %d", stopped.n)
-	}
 	if mgr.PID() != 0 {
 		t.Fatal("kill left the tunnel up")
 	}
-	got, err := e.st.GetRun(started.Runs[0].ID)
-	if err != nil || got.Status != contract.RunStopped {
-		t.Fatalf("run after kill: %+v %v", got.Status, err)
+	got, err := e.st.GetRun(approved.Runs[0].ID)
+	if err != nil || got.Status != contract.RunStopped || !got.StopRequested {
+		t.Fatalf("run after kill: %+v %v", got, err)
+	}
+	if sent := msgs.sent(); len(sent) != 1 || sent[0] != got.TaskID {
+		t.Fatalf("kill messaged %v, want the live agent %s", sent, got.TaskID)
+	}
+	if _, err := e.st.LookupToken(guestTok); err == nil {
+		t.Fatal("run token survived the kill switch")
 	}
 	resp, body = e.do("GET", "/m/"+raw+"/api/maps/"+e.m.ID+"/snapshot", nil, nil)
 	if resp.StatusCode != 404 || len(body) != 0 {
@@ -495,9 +524,23 @@ func TestShareSettingsRoundTrip(t *testing.T) {
 	}
 }
 
-type stopHook struct{ n int }
+type recordMessenger struct {
+	mu    sync.Mutex
+	tasks []string
+}
 
-func (h *stopHook) StopAllRuns(context.Context) error { h.n++; return nil }
+func (m *recordMessenger) Send(_ context.Context, taskID, _, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tasks = append(m.tasks, taskID)
+	return nil
+}
+
+func (m *recordMessenger) sent() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.tasks...)
+}
 
 func shareRaw(link contract.ShareLink) string {
 	u := strings.TrimRight(link.URL, "/")

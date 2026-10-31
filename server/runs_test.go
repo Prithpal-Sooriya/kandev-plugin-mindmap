@@ -616,3 +616,61 @@ func TestFailedRunKeepsAgentError(t *testing.T) {
 		t.Fatalf("failed run: %s %q", got.Status, got.Error)
 	}
 }
+
+func TestSwarmCapsApprovalAndKill(t *testing.T) {
+	p, h := newTestPluginHost(t)
+	m := newMapViaAPI(t, p)
+	if st, b := api(t, p, "PUT", "/api/settings/share", map[string]any{"provider": "cloudflared", "max_concurrent_runs": 2, "require_guest_run_approval": true}); st != 200 {
+		t.Fatalf("share settings: %d %s", st, b)
+	}
+	three := []any{map[string]any{"lens": "researcher", "profile_id": "prof-claude"}, map[string]any{"lens": "skeptic", "profile_id": "prof-claude"},
+		map[string]any{"lens": "builder", "profile_id": "prof-claude"}}
+	// The cap counts every lens agent up front: 3 > 2 starts none.
+	st, b := api(t, p, "POST", "/api/maps/"+m.ID+"/swarms", map[string]any{"node_id": m.RootID, "agents": three})
+	if st != 403 || !strings.Contains(string(b), string(contract.ErrBudgetExceeded)) || len(h.Created()) != 0 {
+		t.Fatalf("swarm over cap: %d %s", st, b)
+	}
+
+	guest, err := p.store.CreateGuest(m.ID, "Bea", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := p.svc.StartSwarm(context.Background(), app.SwarmSpec{MapID: m.ID, NodeID: m.RootID, StartedBy: guest.ID,
+		Agents: []contract.SwarmMember{{Lens: contract.LensResearcher, ProfileID: "prof-claude"}, {Lens: contract.LensSkeptic, ProfileID: "prof-claude"}}})
+	if err != nil || len(runs) != 3 || len(h.Created()) != 0 {
+		t.Fatalf("guest swarm: %d runs, %d tasks, %v", len(runs), len(h.Created()), err)
+	}
+	for _, r := range runs[1:] {
+		if r.Status != contract.RunWaiting || r.WaitingReason != contract.WaitingApproval || r.TaskID != "" {
+			t.Fatalf("lens run not held: %+v", r)
+		}
+	}
+	if c := getRun(t, p, runs[0].ID); c.Status != contract.RunWaiting || c.WaitingReason != contract.WaitingApproval {
+		t.Fatalf("coordinator: %s %s", c.Status, c.WaitingReason)
+	}
+	if n, _ := p.store.CountActiveRuns(m.ID); n != 0 {
+		t.Fatalf("held runs counted: %d", n)
+	}
+	approved := apiRuns(t, p, "/api/runs/"+runs[0].ID+"/approve", nil)
+	if len(approved) != 2 || len(h.Created()) != 2 || approved[0].TaskID == "" || approved[1].TaskID == "" {
+		t.Fatalf("approve: %+v", approved)
+	}
+	if st, b := api(t, p, "POST", "/api/runs/"+runs[0].ID+"/approve", nil); st != 409 {
+		t.Fatalf("approve twice: %d %s", st, b)
+	}
+
+	if err := p.svc.StopAllRuns(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if sent := h.Sent(); len(sent) != 2 {
+		t.Fatalf("kill messages: %+v", sent)
+	}
+	for _, r := range runs {
+		if got := getRun(t, p, r.ID); got.Status != contract.RunStopped {
+			t.Fatalf("run %s after kill: %s", r.ID, got.Status)
+		}
+	}
+	if res := tool(t, p, approved[0].TaskID, "add", map[string]any{"nodes": []any{map[string]any{"title": "Late idea"}}}); !res.IsError {
+		t.Fatal("stopped lens agent could still write")
+	}
+}

@@ -35,14 +35,14 @@ func (s *Service) StartRun(ctx context.Context, spec RunSpec) (store.RunRecord, 
 		return store.RunRecord{}, err
 	}
 	spec.NewRun = nr
-	if !spec.CapsChecked {
-		if err := s.CheckRunCaps(spec.MapID, spec.Budget, 1); err != nil {
-			return store.RunRecord{}, err
-		}
-	}
 	hold, err := s.needsApproval(spec.NewRun)
 	if err != nil {
 		return store.RunRecord{}, err
+	}
+	if !spec.CapsChecked && !hold {
+		if err := s.CheckRunCaps(spec.MapID, spec.Budget, 1); err != nil {
+			return store.RunRecord{}, err
+		}
 	}
 	if err := s.resolveProfile(ctx, &spec.NewRun); err != nil {
 		return store.RunRecord{}, err
@@ -157,17 +157,26 @@ func (s *Service) ApproveRun(ctx context.Context, runID string) ([]store.RunReco
 		if err != nil {
 			return nil, err
 		}
-		var out []store.RunRecord
+		var held []store.RunRecord
 		for _, k := range kids {
 			if k.Status == contract.RunWaiting && k.WaitingReason == contract.WaitingApproval {
-				r, err := s.ApproveRun(ctx, k.ID)
-				if err != nil && len(r) == 0 {
-					return out, err
-				}
-				out = append(out, r...)
+				held = append(held, k)
 			}
 		}
-		if len(out) == 0 {
+		if len(held) > 0 {
+			if err := s.CheckRunCaps(run.MapID, &held[0].Budget, len(held)); err != nil {
+				return nil, err
+			}
+		}
+		var out []store.RunRecord
+		for _, k := range held {
+			r, err := s.ApproveRun(ctx, k.ID)
+			if err != nil && len(r) == 0 {
+				return out, err
+			}
+			out = append(out, r...)
+		}
+		if len(held) == 0 {
 			return nil, contract.Errf(contract.ErrConflict, "no run in this swarm is waiting for approval")
 		}
 		return out, nil
@@ -189,10 +198,11 @@ func (s *Service) ApproveRun(ctx context.Context, runID string) ([]store.RunReco
 		r.Status, r.WaitingReason = contract.RunQueued, ""
 		return true
 	})
-	if err != nil {
-		return nil, err
-	}
-	if run.Status != contract.RunQueued {
+	if err != nil || run.Status != contract.RunQueued {
+		_ = s.Store.RevokeRunTokens(run.ID)
+		if err != nil {
+			return nil, err
+		}
 		return nil, contract.Errf(contract.ErrConflict, "this run is not waiting for approval")
 	}
 	node, _ := s.Store.Node(run.MapID, run.NodeID)
@@ -458,8 +468,14 @@ func (s *Service) StartSwarm(ctx context.Context, spec SwarmSpec) ([]store.RunRe
 		return nil, err
 	}
 	per = *clamped.Budget
-	if err := s.CheckRunCaps(spec.MapID, &per, n); err != nil {
+	hold, err := s.needsApproval(store.NewRun{MapID: spec.MapID, StartedBy: spec.StartedBy})
+	if err != nil {
 		return nil, err
+	}
+	if !hold {
+		if err := s.CheckRunCaps(spec.MapID, &per, n); err != nil {
+			return nil, err
+		}
 	}
 	pool := contract.Budget{MaxDepth: per.MaxDepth + 1, MaxNodes: per.MaxNodes * n, MaxSubagents: n * (1 + per.MaxSubagents), MaxMinutes: per.MaxMinutes}
 	swarmID := store.NewID("sw")

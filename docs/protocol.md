@@ -87,7 +87,9 @@ Rules:
   The internal `api` webhook principal is not limited. A bad token still 404s; it is not turned into a 429.
 - **Kill switch** (host only, `POST /m/<t>/api/kill`): it revokes every share and guest token, stops the tunnel,
   and asks every active run to stop (see §9). Stopping runs goes through `app.Service.StopAllRuns`, which calls
-  the `app.StopAllRuns` hook Phase 2a implements (`Service.Stops`) and then marks non-terminal runs `stopped`.
+  the `Service.Stops` hook (`app.RunStopper`) and then marks any remaining non-terminal runs `stopped`. The hook
+  sends each live agent the stop message, revokes its run token, releases its claims and marks the run `stopped`
+  with `stop_requested`; swarm coordinators are stopped after their lens runs.
 - **Share secrets.** The `tokens` table stores only a sha256. So the host can show the same URL again after a
   quick tunnel gets a new hostname, the raw share secret is also kept in `share-secrets.json` (mode `0600`) in the
   plugin data directory. That file is not served. Guest, local, run and personal tokens are not written there.
@@ -158,7 +160,7 @@ contract types. Errors return `{"error": Error}` with the HTTP status from `Erro
 | `POST /m/<t>/api/maps/<map>/suggest` | `SuggestRequest` → `SuggestResponse` (one-shot `InvokeUtilityAgent`) |
 | `POST /m/<t>/api/runs/<run>/stop` | asks the agent to stop (§9). `204` |
 | `POST /m/<t>/api/runs/<run>/message` | `MessageRunRequest` → `Messages().Send`. `204` |
-| `POST /m/<t>/api/runs/<run>/approve` | host only: release a guest run held for approval |
+| `POST /m/<t>/api/runs/<run>/approve` | host only: launch a guest run (or swarm) held for approval → `StartRunsResponse` |
 | `POST /m/<t>/api/maps/<map>/nodes/<node>/answer` | `AnswerQuestionRequest` → `{ops, rev}`: answers an `ask_human` question node and relays the answer to the asking agent (§9) |
 | `GET /m/<t>/api/repos?map_id=<map>` | `RepoInfo[]`: repositories of the map's workspace (for `execute`). Share tokens use their map |
 | `GET /m/<t>/api/runs/tasks` | `RunTasksResponse`: Kandev task ids that are map runs (all-maps local tokens only) |
@@ -181,9 +183,13 @@ contract types. Errors return `{"error": Error}` with the HTTP status from `Erro
 
 `ShareSettings.provider` is `cloudflared` (default), `tailscale` or `ngrok`. A zero cap means no plugin-level limit.
 Per-map `MapSettings` still apply and the tighter of the two wins. `require_guest_run_approval` is off by default.
-When it is on, a guest `POST .../runs` returns `403 forbidden` until Phase 2a queues the run with
-`waiting_reason=approval`. The host and agent participants are never held. Run launch calls
-`Service.CheckRunCaps` before creating a run; a swarm that does not go through `StartRun` must call it too.
+When it is on, a guest's `POST .../runs` or `POST .../swarms` returns `200` with the runs in `waiting(approval)`,
+no task and no run token. The host and agent participants are never held, and neither are sub-agents spawned by
+an approved run. `POST .../runs/<run>/approve` (host only) issues a token and launches the run; on a swarm
+coordinator it launches every held lens run. Approving anything else is `409 conflict`.
+`Service.CheckRunCaps` guards every launch: a single run checks for one more, a swarm checks for all its lens
+agents at once, `spawn` checks for all its agents before starting any, and approval checks again. Held runs and
+swarm coordinators (which have no agent of their own) do not count toward `max_concurrent_runs`.
 `Service.GuestRunNeedsApproval` (and `share.GuestRunNeedsApproval`) is the approval check.
 
 A missing tunnel binary is `not_installed` (HTTP 503). The message includes the install command, for example
@@ -566,5 +572,7 @@ Agent runs launch real Kandev tasks. Notes for clients and for the sharing work:
   carries a run token for the `mindmap_*` bridge tools, a map outline, and the `mindmap-patch` fallback (§10).
 - **Early events.** Session events for a task id the plugin does not know yet are buffered (2 min) and replayed
   when `Create` returns, so a fast agent's first `RUNNING` is not lost.
+- **Approval queue.** A held run keeps its `repo_id` in memory only; after a plugin restart an approved
+  `execute` run falls back to the map's `repo_id`.
 - **Task panel.** The in-Kandev bundle registers a task panel (`mindmap-run`) that reads
   `GET tasks/<task>/run` and links to `/mindmap?map=<map>&node=<node>`; the canvas selects `?node=` on load.

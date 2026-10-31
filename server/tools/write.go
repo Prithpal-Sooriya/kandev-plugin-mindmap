@@ -460,6 +460,9 @@ func (t *Tools) spawn(ctx context.Context, s *session, a any) (contract.ToolResu
 	if left != nil && left.Subagents >= 0 && len(args.Agents) > left.Subagents {
 		return contract.ToolResult{}, contract.FieldErr(contract.ErrBudgetExceeded, "agents", "you asked for %d sub-agents but %d are left", len(args.Agents), left.Subagents)
 	}
+	if err := t.svc.CheckRunCaps(s.mapID, nil, len(args.Agents)); err != nil {
+		return contract.ToolResult{}, err
+	}
 	nodes := make([]string, len(args.Agents))
 	for i, ag := range args.Agents {
 		id, err := t.writeNode(s, fmt.Sprintf("agents[%d].node_id", i), ag.NodeID, "")
