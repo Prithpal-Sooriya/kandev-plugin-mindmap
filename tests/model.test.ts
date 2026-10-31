@@ -9,7 +9,7 @@ describe("manifest", () => {
     expect(manifest).not.toContain("mindmap_ping");
   });
   it("keeps the UI plugin id in sync with the manifest", () => {
-    const ui = readFileSync("ui/src/register.tsx", "utf8");
+    const ui = readFileSync("ui/src/kandev/register.tsx", "utf8");
     expect(ui).toContain('const PLUGIN_ID = "kandev-plugin-mindmap"');
   });
 });

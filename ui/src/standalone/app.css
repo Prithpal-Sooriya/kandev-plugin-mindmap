@@ -1,0 +1,62 @@
+/* Standalone guest app: a default light/dark palette with the same variable
+   names as the Kandev host theme, so ui/plugin.css renders identically. */
+@import "../../plugin.css";
+
+:root {
+  --font-sans: "Figtree", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.51 0.23 277);
+  --primary-foreground: oklch(0.96 0.02 272);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.68 0.18 276);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.58 0.22 27);
+  --success: oklch(0.58 0.12 150);
+  --warning: oklch(0.7 0.13 78);
+  --warning-foreground: oklch(0.23 0.035 72);
+  --info: oklch(0.58 0.12 205);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  color-scheme: light;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.59 0.2 277);
+  --primary-foreground: oklch(0.96 0.02 272);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.62 0.18 276);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.68 0.12 150);
+  --warning: oklch(0.78 0.12 78);
+  --warning-foreground: oklch(0.19 0.035 72);
+  --info: oklch(0.7 0.11 205);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  color-scheme: dark;
+}
+
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--background); color: var(--foreground); }
+.mm-standalone { position: relative; height: 100%; display: flex; flex-direction: column; }
+.mm-standalone > .mm-root { flex: 1; min-height: 0; }
+.mm-theme-toggle { position: fixed; right: 10px; bottom: 34px; z-index: 30; background: var(--card); border: 1px solid var(--border); }
+.mm-toasts { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; z-index: 40; font: 13px var(--font-sans); }
+.mm-toast { padding: 8px 14px; border-radius: 8px; background: var(--foreground); color: var(--background); box-shadow: 0 8px 24px oklch(0 0 0 / 20%); cursor: pointer; }
+.mm-toast-error { background: var(--destructive); color: white; }
+.mm-toast-success { background: var(--success); color: white; }
