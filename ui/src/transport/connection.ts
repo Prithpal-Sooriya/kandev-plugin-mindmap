@@ -208,8 +208,10 @@ export class Connection {
     }
   }
 
-  private resync(): void {
-    if (this.ws && this.ws.readyState === OPEN) this.sendRaw(this.hello());
+  /** Asks for a fresh snapshot (hello without since_rev). */
+  resync(): void {
+    // A fresh socket says hello without since_rev (the engine dropped hasSnapshot) and gets a snapshot.
+    if (this.ws && this.ws.readyState === OPEN) this.ws.close();
     else if (this.state === "longpoll") this.restartPolling("");
   }
 

@@ -96,7 +96,14 @@ export class MapController {
 
   start(): void {
     this.conn.start();
-    this.trailTimer = setInterval(() => this.engine.expireTrail(2500), 1000);
+    this.trailTimer = setInterval(() => {
+      this.engine.expireTrail(2500);
+      // A rev gap that never fills (a lost frame): start over from a snapshot.
+      if (this.engine.stalled(5000)) {
+        this.engine.hasSnapshot = false;
+        this.conn.resync();
+      }
+    }, 1000);
   }
 
   stop(): void {
