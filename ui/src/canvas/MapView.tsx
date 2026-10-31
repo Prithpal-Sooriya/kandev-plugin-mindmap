@@ -5,6 +5,7 @@ import type { HostAdapter } from "../host/adapter";
 import { installCanvasMeasurer } from "../layout/measure";
 import { h, React } from "../runtime";
 import { AvatarStack } from "./agent";
+import { AgentsDock } from "./dock";
 import { Canvas, type CanvasApi } from "./Canvas";
 import { MapController } from "./controller";
 import { useStore } from "./hooks";
@@ -101,9 +102,9 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
         <ConnChip state={ctl.connState} />
         <span className="mm-spacer" />
         {running || needsYou ? (
-          <span className={`mm-chip ${needsYou ? "mm-chip-waiting" : "mm-chip-running"}`} title="Agents (the full dock arrives in Phase 2b)">
+          <button className={`mm-chip ${needsYou ? "mm-chip-waiting" : "mm-chip-running"}`} onClick={() => { ctl.dockOpen = true; ctl.bump(); }} title="Open agents dock">
             {running ? `${running} agent${running > 1 ? "s" : ""} running` : ""}{running && needsYou ? " · " : ""}{needsYou ? `${needsYou} need${needsYou > 1 ? "" : "s"} you` : ""}
-          </span>
+          </button>
         ) : null}
         {pendingItems ? (
           <button type="button" className={`mm-btn mm-btn-sm${ctl.showGhosts ? " mm-btn-on" : ""}`} onClick={() => ctl.toggleGhosts()} title="Show or hide proposed changes">

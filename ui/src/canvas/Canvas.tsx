@@ -14,6 +14,7 @@ import { ringFor } from "./agent";
 import type { MapController } from "./controller";
 import { keyToCommand, type Command } from "./keys";
 import { NodeCard, propsEqual, type CardProps } from "./NodeCard";
+import { Minimap } from "./minimap";
 
 const LOD_ZOOM = 0.45;
 const MOUNT_PER_FRAME = 150;
@@ -79,6 +80,13 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
     setRegion((r: typeof region) => (r && contains(r, vp) && r.w < vp.w * 3.5 ? r : expand(vp, 0.6)));
     setLod((l: boolean) => (c.k < LOD_ZOOM) !== l ? c.k < LOD_ZOOM : l);
     ctl.publishPresence({ viewport: { x: vp.x, y: vp.y, w: vp.w, h: vp.h } });
+    const mmVp = document.getElementById("mm-minimap-vp");
+    if (mmVp) {
+      mmVp.setAttribute("x", String(vp.x));
+      mmVp.setAttribute("y", String(vp.y));
+      mmVp.setAttribute("width", String(vp.w));
+      mmVp.setAttribute("height", String(vp.h));
+    }
   }, [ctl]);
 
   const schedule = React.useCallback(() => {
@@ -204,6 +212,7 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
     const dist = Math.hypot(e.clientX - p.sx, e.clientY - p.sy);
     if (!p.moved && dist < 4) return;
     p.moved = true;
+    if (ctl.followingRun) { ctl.followingRun = null; ctl.bump(); }
     if (p.mode === "pan") {
       viewportRef.current?.classList.add("mm-panning");
       setCam({ ...cam.current, x: p.cx + (e.clientX - p.sx), y: p.cy + (e.clientY - p.sy) });
@@ -382,6 +391,7 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
     const agentP = (runs ?? []).filter((r) => r.status === "running" || r.status === "waiting").map((r) => presenceById.get(r.participant_id)).filter(Boolean) as Participant[];
     const tm = engine.trail.get(id);
     const asset = node.assets?.find((a) => a.kind === "image");
+    const contested = display.links.some((l) => l.to === id && (l.label?.toLowerCase().includes("contest") || l.label?.toLowerCase().includes("counter")));
     if (asset) wantThumb(asset.id);
     const cp: CardProps = {
       node, box, isRoot: id === display.rootId, selected: ctl.selection === id, remoteSelect: remoteSel.get(id) ?? null,
@@ -389,7 +399,7 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
       ring: ring ? { ...ring, color: ring.run ? presenceById.get(ring.run.participant_id)?.color : undefined, count: display.pendingByNode.get(id) } : null,
       agents: agentP, trail: tm ? { at: tm.at, color: presenceById.get(tm.participantId)?.color ?? "var(--primary)" } : null,
       unseen: engine.unseen.has(id), ghosts: display.ghosts.get(id), dragging: drag?.id === id,
-      hasThumb: !!asset, thumbUrl: asset ? thumbs.get(asset.id) || undefined : undefined,
+      hasThumb: !!asset, thumbUrl: asset ? thumbs.get(asset.id) || undefined : undefined, contested,
       hideTitle: ctl.editing?.id === id,
     };
     const cached = cardCache.current.get(id);
@@ -435,6 +445,7 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
       );
     });
 
+  const halos = computeHalos(ctl).map((h, i) => <rect key={`halo-${h.id}`} x={h.box.x} y={h.box.y} width={h.box.w} height={h.box.h} rx="16" fill={h.color} opacity="0.1" />);
   const arrows = display.arrows.map((a, i) => {
     const from = boxes.get(a.from), to = boxes.get(a.to);
     if (!from || !to) return null;
@@ -457,6 +468,37 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
   const dragBox = drag ? boxes.get(drag.id) : null;
   const selBox = ctl.selection ? boxes.get(ctl.selection) : null;
   const selGhosts = ctl.selection ? display.ghosts.get(ctl.selection) : undefined;
+  React.useEffect(() => {;
+    if (!ctl.followingRun) return;;
+    const run = ctl.engine.runs.get(ctl.followingRun);;
+    if (!run) return;;
+    let latestNode = run.node_id;;
+    let latestTime = 0;;
+    for (const [id, tm] of ctl.engine.trail.entries()) {;
+      if (tm.participantId === run.participant_id && tm.at > latestTime) {;
+        latestTime = tm.at;;
+        latestNode = id;;
+      }
+    };
+    if (latestTime > (ctl as any).lastTrailTime) {;
+      (ctl as any).lastTrailTime = latestTime;;
+      props.apiRef.current?.reveal(latestNode);
+    };
+  });
+  React.useEffect(() => {;
+    if (!region || engine.unseen.size === 0) return;;
+    const t = setTimeout(() => {
+      let changed = false;
+      for (const id of engine.unseen) {
+        const b = boxes.get(id);
+        if (b && b.x >= region.x && b.y >= region.y && b.x + b.w <= region.x + region.w && b.y + b.h <= region.y + region.h) {
+          engine.markSeen(id);
+          changed = true;
+        };
+      };
+      if (changed) ctl.bump();
+    }, 1000);
+    return () => clearTimeout(t);  }, [region, engine.unseen.size]);
 
   return (
     <div
@@ -485,6 +527,7 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
             <marker id="mm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" className="mm-arrowhead" /></marker>
             <marker id="mm-arrow-ghost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" className="mm-arrowhead-ghost" /></marker>
           </defs>
+          {halos}
           {edges}
           {links}
           {arrows}
@@ -517,6 +560,8 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
       <div className="mm-hint" aria-hidden="true">
         {IS_MAC ? "⌘K" : "Ctrl K"} commands · Tab child · Enter sibling · Space collapse · drag to pan
       </div>
+      {region && <OffscreenMarkers ctl={ctl} region={region} cam={cam.current} size={size.current} onFly={(id) => props.apiRef.current?.reveal(id)} />}
+      {region && <Minimap ctl={ctl} region={region} onNavigate={(x, y) => setCam({ ...cam.current, x: size.current.w / 2 - x * cam.current.k, y: size.current.h / 2 - y * cam.current.k })} />}
       <span className="mm-sr">{visible.size} of {boxes.size} nodes rendered</span>
     </div>
   );
@@ -566,3 +611,131 @@ function InlineEditor(props: { ctl: MapController; box: Box; isRoot: boolean; on
   );
 }
 
+
+function computeHalos(ctl: MapController) {
+  const halos: { id: string; color: string; box: { x: number; y: number; w: number; h: number } }[] = [];
+  const activeRuns = [...ctl.engine.runs.values()].filter(r => r.status === "running" || r.status === "waiting");
+  
+  for (const run of activeRuns) {
+    const p = ctl.engine.participants.get(run.participant_id);
+    if (!p) continue;
+    
+    // Find claimed nodes or the run's root node
+    const roots = new Set<string>();
+    roots.add(run.node_id);
+    for (const node of ctl.view.nodes.values()) {
+      if (node.claim?.run_id === run.id) roots.add(node.id);
+    }
+    
+    for (const rootId of roots) {
+      const rootBox = ctl.display.layout.boxes.get(rootId);
+      if (!rootBox) continue;
+      
+      let minX = rootBox.x, minY = rootBox.y, maxX = rootBox.x + rootBox.w, maxY = rootBox.y + rootBox.h;
+      
+      // Include all descendants
+      const stack = [rootId];
+      while (stack.length > 0) {
+        const curr = stack.pop()!;
+        const children = ctl.display.layout.children.get(curr) ?? [];
+        for (const child of children) {
+          const cb = ctl.display.layout.boxes.get(child);
+          if (cb) {
+            minX = Math.min(minX, cb.x);
+            minY = Math.min(minY, cb.y);
+            maxX = Math.max(maxX, cb.x + cb.w);
+            maxY = Math.max(maxY, cb.y + cb.h);
+            stack.push(child);
+          }
+        }
+      }
+      
+      // Add padding
+      const pad = 20;
+      halos.push({
+        id: `${run.id}-${rootId}`,
+        color: p.color,
+        box: { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 }
+      });
+    }
+  }
+  return halos;
+}
+
+function OffscreenMarkers(props: { ctl: MapController; region: { x: number; y: number; w: number; h: number } | null; cam: Camera; size: { w: number; h: number }; onFly: (id: string) => void }) {
+  const { ctl, region, cam, size, onFly } = props;
+  if (!region) return null;
+  
+  const activeRuns = [...ctl.engine.runs.values()].filter(r => r.status === "running" || r.status === "waiting");
+  const markers: { id: string; x: number; y: number; angle: number; color: string; name: string }[] = [];
+  
+  const cx = region.x + region.w / 2;
+  const cy = region.y + region.h / 2;
+  
+  for (const run of activeRuns) {
+    const p = ctl.engine.participants.get(run.participant_id);
+    if (!p) continue;
+    
+    const b = ctl.display.layout.boxes.get(run.node_id);
+    if (!b) continue;
+    
+    // Check if outside region
+    if (b.x + b.w > region.x && b.x < region.x + region.w && b.y + b.h > region.y && b.y < region.y + region.h) continue;
+    
+    const nx = b.x + b.w / 2;
+    const ny = b.y + b.h / 2;
+    
+    const dx = nx - cx;
+    const dy = ny - cy;
+    const angle = Math.atan2(dy, dx);
+    
+    // Intersect with viewport rect (in screen space)
+    // Viewport is 0,0 to size.w, size.h
+    const scx = size.w / 2;
+    const scy = size.h / 2;
+    
+    let tx = scx, ty = scy;
+    const absCos = Math.abs(Math.cos(angle));
+    const absSin = Math.abs(Math.sin(angle));
+    
+    if (scx * absSin > scy * absCos) {
+      // Intersects top or bottom
+      ty = Math.sign(Math.sin(angle)) * scy;
+      tx = ty / Math.tan(angle);
+    } else {
+      // Intersects left or right
+      tx = Math.sign(Math.cos(angle)) * scx;
+      ty = tx * Math.tan(angle);
+    }
+    
+    // Padding from edge
+    const pad = 20;
+    const len = Math.hypot(tx, ty);
+    const scale = Math.max(0, len - pad) / len;
+    
+    markers.push({
+      id: run.node_id,
+      x: scx + tx * scale,
+      y: scy + ty * scale,
+      angle: angle * 180 / Math.PI,
+      color: p.color,
+      name: p.name
+    });
+  }
+  
+  return (
+    <div className="mm-offscreen-markers">
+      {markers.map((m, i) => (
+        <div 
+          key={i} 
+          className="mm-offscreen-marker" 
+          style={{ left: m.x, top: m.y, transform: `translate(-50%, -50%) rotate(${m.angle}deg)`, "--mm-agent": m.color } as any}
+          onClick={() => onFly(m.id)}
+          title={`Fly to ${m.name}`}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 2L22 20L12 17L2 20L12 2Z" fill="currentColor" /></svg>
+        </div>
+      ))}
+    </div>
+  );
+}

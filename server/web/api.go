@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -353,4 +354,49 @@ func (s *Server) invokeTool(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res := s.tools.Invoke(ctx, tools.Caller{Transport: contract.TransportBridge, Token: tok}, r.PathValue("name"), body)
 	writeJSON(w, 200, res)
+}
+
+func (s *Server) opsRange(w http.ResponseWriter, r *http.Request, p *principal) {
+	mapID := r.PathValue("map")
+	if !p.canAccess(mapID) {
+		writeErr(w, contract.Errf(contract.ErrNotFound, "map not found"))
+		return
+	}
+	from, to := r.URL.Query().Get("from"), r.URL.Query().Get("to")
+	if from == "" || to == "" {
+		writeErr(w, contract.Errf(contract.ErrBadRequest, "from and to are required"))
+		return
+	}
+
+	fromRev, err := strconv.ParseInt(from, 10, 64)
+	if err != nil {
+		writeErr(w, contract.Errf(contract.ErrBadRequest, "from must be an integer"))
+		return
+	}
+	toRev, err := strconv.ParseInt(to, 10, 64)
+	if err != nil {
+		writeErr(w, contract.Errf(contract.ErrBadRequest, "to must be an integer"))
+		return
+	}
+
+	since := fromRev - 1
+	if since < 0 {
+		since = 0
+	}
+	ops, err := s.svc.Store.OpsSince(mapID, since, int(toRev-fromRev+1))
+	if err == nil {
+		filtered := make([]contract.Op, 0, len(ops))
+		for _, op := range ops {
+			if op.Rev <= toRev {
+				filtered = append(filtered, op)
+			}
+		}
+		ops = filtered
+	}
+
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ops": ops})
 }

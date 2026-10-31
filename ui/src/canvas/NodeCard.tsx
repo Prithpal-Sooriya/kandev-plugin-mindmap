@@ -24,6 +24,7 @@ export interface CardProps {
   dragging: boolean;
   hasThumb: boolean;
   thumbUrl?: string;
+  contested?: boolean;
   /** Title currently being typed (hidden behind the editor). */
   hideTitle: boolean;
 }
@@ -55,6 +56,7 @@ export function NodeCard(p: CardProps) {
     ghostKinds.includes("merge") ? "mm-ghost-merge" : "",
     p.dragging ? "mm-dragging" : "",
     node.kind === "research" && !node.sources?.length ? "mm-uncited" : "",
+    p.contested ? "mm-contested" : "",
   ].filter(Boolean).join(" ");
   const style: Record<string, string | number> = {
     transform: `translate(${box.x}px,${box.y}px)`,
@@ -82,6 +84,7 @@ export function NodeCard(p: CardProps) {
             p.thumbUrl ? <img className="mm-thumb" src={p.thumbUrl} alt="" /> : <span className="mm-badge" title={`${node.assets.length} attachments`}><Icon d={ICONS.image} size={10} />{node.assets.length}</span>
           ) : null}
           {node.tags?.slice(0, 2).map((t) => <span className="mm-tag" key={t}>#{t}</span>)}
+          {p.contested ? <span className="mm-badge mm-badge-warn" title="Contested claim"><Icon d={ICONS.warn} size={10} />Contested</span> : null}
         </div>
       ) : null}
       {box.hidden ? <span className="mm-collapsed-count" title={`${box.hidden} hidden`}>{box.hidden}</span> : null}

@@ -110,6 +110,7 @@ func (s *Server) routes() *http.ServeMux {
 	m("GET /m/{token}/api/maps/{map}/snapshot", s.snapshot)
 	m("GET /m/{token}/api/maps/{map}/sync", s.syncRoute)
 	m("POST /m/{token}/api/maps/{map}/ops", s.submitRoute)
+	m("GET /m/{token}/api/maps/{map}/ops", s.opsRange)
 	m("POST /m/{token}/api/maps/{map}/undo", s.undo)
 	m("POST /m/{token}/api/maps/{map}/runs", s.startRun)
 	m("POST /m/{token}/api/maps/{map}/assets", s.uploadAsset)
