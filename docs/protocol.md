@@ -159,6 +159,10 @@ contract types. Errors return `{"error": Error}` with the HTTP status from `Erro
 | `POST /m/<t>/api/runs/<run>/stop` | asks the agent to stop (§9). `204` |
 | `POST /m/<t>/api/runs/<run>/message` | `MessageRunRequest` → `Messages().Send`. `204` |
 | `POST /m/<t>/api/runs/<run>/approve` | host only: release a guest run held for approval |
+| `POST /m/<t>/api/maps/<map>/nodes/<node>/answer` | `AnswerQuestionRequest` → `{ops, rev}`: answers an `ask_human` question node and relays the answer to the asking agent (§9) |
+| `GET /m/<t>/api/repos?map_id=<map>` | `RepoInfo[]`: repositories of the map's workspace (for `execute`). Share tokens use their map |
+| `GET /m/<t>/api/runs/tasks` | `RunTasksResponse`: Kandev task ids that are map runs (all-maps local tokens only) |
+| `GET /m/<t>/api/tasks/<task>/run` | `TaskRunInfo`: the run behind a Kandev task, the path to its node and its branch (local tokens only) |
 | `POST /m/<t>/api/proposals/<id>/review` | `ReviewProposalRequest` → `Proposal` |
 | `POST /m/<t>/api/maps/<map>/assets` | multipart upload (`file`, `node_id`, `caption?`) → `Asset`. Then submit `asset.attach` |
 | `GET /m/<t>/assets/<id>` | asset bytes (guests; the in-Kandev UI uses the `asset` webhook) |
@@ -347,7 +351,7 @@ is written as compact, id-tagged lines.
 | `attach` | exactly one of `url`, `file_path`, `base64`. `file_path` must be absolute and readable by the plugin process. The bridge reads relative paths itself and sends `base64`. `base64` needs `mime_type`. Max 10 MB decoded. MIME must be in `AllowedAssetMIME` |
 | `restructure` | per-op required fields (see the description). All ops are one batch: all or nothing |
 | `claim` | fails with `claimed` if another participant's claim has not expired. A claim covers the subtree for halos and swarm coordination |
-| `spawn` | templates `research`, `explore`, `swarm` or `critique`. Each agent costs one `max_subagents` from the root run's pool. Child budgets are clamped to what is left |
+| `spawn` | templates `research`, `explore`, `swarm`, `critique`, `expand` or `examples` (default `research`). Each agent costs one `max_subagents` from the root run's pool. Child budgets are clamped to what is left |
 | `ask_human` | creates a `question` node and moves the run to `waiting(question)`. The answer (`question.answer` op) is sent back to the agent with `Messages().Send` |
 | `write_doc` | `path` is relative and ends in `.md`. The doc node is placed under `parent_doc_id`, or the run node |
 | `report` | sets `run.summary` and `run.reported`, and drives the status (§9). In propose mode it moves the proposal from `open` to `ready` |
@@ -375,9 +379,10 @@ turn_ended | approval`).
 
 1. **Start.** `POST runs` (or `spawn`, or a swarm or compile) creates a `runs` row (`queued`), an agent
    participant, and a run token. The backend then calls `Host.Tasks().Create` with `StartAgent: true`,
-   `Launch{AgentProfileID, Prompt}` and `Metadata{mindmap_id, node_id, run_id}`, and stores `task_id` before
-   returning. If the host requires approval for guest runs, the run stays `waiting(approval)` with no task until
-   approved.
+   `Launch{AgentProfileID, Prompt}` and `Metadata{mindmap_id, node_id, run_id, parent_run_id?}` (plus
+   `Repositories` when a repo is given), and stores `task_id` before returning. If `Create` fails, the run is
+   returned `failed` with `error` set (HTTP 200), its token revoked and its claims released. If the host requires
+   approval for guest runs, the run stays `waiting(approval)` with no task until approved.
 2. **Status from events.** `task_session.state_changed` is the source of truth. Spike finding: `agent.completed`
    and `agent.failed` may never fire. The event's `task_id` maps to the run, and `new_state` is read defensively;
    when it is missing, the event is ignored. `contract.NextRunStatus` is the pure rule:
@@ -394,11 +399,26 @@ turn_ended | approval`).
    `contract.NodeStatusForRun`.
 3. **Output.** `message.added` (and `agent.stream.*` when available) for the run's session becomes `output`
    lines, and updates `run.last_output`. The same event feeds the `mindmap-patch` parser (§10).
-4. **Stop.** The Host API cannot stop a session (spike finding 5). Stop sets `stop_requested`, sends
-   `Messages().Send("Stop now: call report with status review and end your turn.")`, and revokes the run token
-   after the grace period. The UI also links to the task. The run becomes `stopped` at the next settle state.
+4. **Stop.** The Host API cannot stop a session (spike finding 5). Stop marks the run `stopped` right away (with
+   `stop_requested` and `ended_at`), revokes its run tokens, releases its claims, and sends
+   `Messages().Send("Stop now: … call report with status review and end your turn.")`. Later session states keep
+   it `stopped`. Bridge calls fail at once (token revoked); Kandev MCP calls from the task keep working for the
+   10-minute grace (so the agent can `report`), then fail with `run_ended`. Stopping a
+   stopped run is a no-op. The UI also links to the task. A `message` to a stopped run re-opens it (clears
+   `stop_requested`; bridge runs get a fresh token in the message) and the next `RUNNING` state makes it `running`.
 5. **Budget.** `usage` is summed across the run tree (`root_run_id`). Writes that would exceed it fail with
-   `budget_exceeded`. `max_minutes` is enforced by the stop message.
+   `budget_exceeded`; so does a `spawn` beyond `max_subagents`. `max_minutes` is enforced by a 30 s watchdog that
+   stops the run (as in 4) with `error: "time budget of N minutes used up"`.
+6. **Swarms.** `POST swarms` creates a **coordinator** run (`template: swarm`, no task, no lens) that owns the shared
+   budget pool (`max_nodes` = per-agent budget × agents) and the `swarm_id`. For each member it adds a
+   `"<Lens> lens"` idea child under the target node and starts a lens run there (`parent_run_id` = coordinator,
+   `lens` set) that claims its branch. The coordinator's status is derived from its children: any
+   `running`/`queued` → `running`; else any `waiting` → `waiting`; else any `review` → `review`; else all
+   `stopped` → `stopped`; all `failed` → `failed`; else `done`. Stop and message on the coordinator fan out to the
+   children. `StartRunsResponse.runs` is `[coordinator, ...lens runs]`.
+7. **Questions.** `ask_human` adds a question node and puts the run in `waiting(question)`. Answering (WS
+   `question.answer` op or `POST .../nodes/<node>/answer`) writes the answer, sends it to the agent with
+   `Messages().Send`, and, when no other question of the run is open, moves the run back to `running`.
 
 ## 10. Prompt fallback: `mindmap-patch` blocks
 
@@ -487,10 +507,10 @@ against these.
 
 - The manifest also subscribes to `message.updated`, so `mindmap-patch` blocks in agent messages that stream in
   through updates are still executed (each block once, keyed by `(message_id, block index)`).
-- Routes from §4 that later phases build (swarms, compile, suggest, run stop/message/approve, export.zip) answer
-  `501 not_implemented`. Share, rotate, stop, status, join, audit, share settings and the kill switch are live.
-  `POST .../runs` works, but runs stay `queued` with no `task_id` until Phase 2a plugs a Host-backed launcher
-  into `app.Launcher`. While `require_guest_run_approval` is on, a guest start is `403` rather than queued.
+- Routes from §4 that later phases build (compile, suggest, export.zip) answer `501 not_implemented`. Share,
+  rotate, stop, status, join, audit, share settings and the kill switch are live (Phase 2d). Runs, swarms, stop,
+  message, approve and answers work since Phase 2a (§14). While `require_guest_run_approval` is on, a guest's run
+  is created in `waiting(approval)` with no task until the host approves it.
 
 **Clarifications for clients**
 
@@ -523,3 +543,25 @@ against these.
   no such field), so the backend accepts absolute paths under `$KANDEV_HOME/tasks` (default `~/.kandev/tasks`,
   where Kandev puts task worktrees) or the temp dirs, after resolving symlinks. Override with
   `MINDMAP_ATTACH_ROOTS`. `attach.url` refuses loopback, private and link-local addresses.
+
+## 14. Phase 2a implementation notes
+
+Agent runs launch real Kandev tasks. Notes for clients and for the sharing work:
+
+- **Templates.** `POST runs` takes `template ∈ research | expand | critique | examples | custom | explore | garden |
+  execute` (`swarm` only through `POST swarms`; `compile`/`synthesis` arrive later). `explore` is the autonomous
+  explorer: it works within `budget` and may `spawn`. `garden` always runs in `propose` mode and defaults to the
+  root node. `execute` needs an `action` node and uses `repo_id` (default: the map's `repo_id`). `custom` needs a
+  `goal`. `lens` adds a persona to any template.
+- **Profiles.** `profile_id` accepts a profile id or its name. The default is the map's
+  `settings.default_profile_id`, then the plugin config `agent_profile`. Without either the request fails with
+  `bad_request` on `profile_id`. `GET profiles` returns `{id, name, harness}`; `harness` is detected from the
+  agent's display name and profile name (whole words: `claude`, `cursor`, `codex`, `pi`; else `other`).
+- **Tool transport.** Claude, Cursor and Codex get `transport: mcp`: their prompt names the Kandev MCP tools
+  (`kandev_kandev_plugin_mindmap_<tool>`; Claude: `mcp__kandev__kandev_kandev_plugin_mindmap_<tool>` and an
+  instruction to load the deferred tool schemas first). Every other harness gets `transport: bridge`: the prompt
+  carries a run token for the `mindmap_*` bridge tools, a map outline, and the `mindmap-patch` fallback (§10).
+- **Early events.** Session events for a task id the plugin does not know yet are buffered (2 min) and replayed
+  when `Create` returns, so a fast agent's first `RUNNING` is not lost.
+- **Task panel.** The in-Kandev bundle registers a task panel (`mindmap-run`) that reads
+  `GET tasks/<task>/run` and links to `/mindmap?map=<map>&node=<node>`; the canvas selects `?node=` on load.

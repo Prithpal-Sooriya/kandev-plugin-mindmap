@@ -2,9 +2,27 @@
 
 An agentic, multiplayer mind map for [Kandev](https://github.com/kdlbs/kandev).
 
-Status: Phase 1a (backend core) and 1b (canvas UI). See [docs/protocol.md](docs/protocol.md) for the wire contract
-(§13 lists what the backend implements so far) and [docs/spike-findings.md](docs/spike-findings.md)
-for what the Phase 0 spike verified.
+Status: Phase 1a (backend core), 1b (canvas UI) and 2a (agent runs). See [docs/protocol.md](docs/protocol.md) for
+the wire contract (§13 and §14 list what the backend implements so far) and
+[docs/spike-findings.md](docs/spike-findings.md) for what the Phase 0 spike verified.
+
+## Agent runs
+
+Right-click a node, or press ⌘K, and pick **Run agent…**, **Swarm…**, **Explore from here…**, **Execute…** or
+**Garden the map…**. Each agent is a Kandev task started with the chosen agent profile:
+
+- **Run agent**: one agent with a template (Research, Expand branches, Critique, Find examples, or a custom goal).
+- **Swarm**: several agents with different lenses (Researcher, Skeptic, Builder, Contrarian, Examples hunter,
+  Futurist), each in its own sub-branch, possibly on different harnesses, sharing one budget.
+- **Explore**: an agent that grows the map on its own within a node/depth/time budget and may start sub-agents.
+- **Garden**: an agent that tidies the whole map and only proposes changes.
+- **Execute**: an agent that carries out an action node in a repository.
+
+Claude, Cursor and Codex call the map through Kandev MCP tools. Other harnesses (for example Pi) get a run token for
+the `mindmap_*` bridge tools, with `mindmap-patch` blocks as the fallback. The inspector can stop or message an agent
+and open its task; question nodes from `ask_human` can be answered inline; each run's Kandev task gets a
+**Mind Map** panel with its branch and a link back to the map. Set a default profile in the plugin config
+(`agent_profile`) or per map (`settings.default_profile_id`).
 
 ## Contract layout
 
@@ -16,7 +34,7 @@ for what the Phase 0 spike verified.
 | `contract/tools/` | the 13 agent tool declarations; `npm run sync:tools` regenerates `manifest.yaml` |
 | `server/store/` | SQLite store: op log, apply engine, proposals, runs, tokens, assets (`schema.sql` is migration v1) |
 | `server/hub/` | per-map fan-out to WS clients and the long-poll ring buffer; presence and soft locks |
-| `server/app/` | the core service: commit + broadcast, runs (behind the `Launcher` interface), output, activity |
+| `server/app/` | the core service: commit + broadcast, runs, swarms, stop/message, prompts (`app/prompts/*.md`), activity |
 | `server/tools/` | the 13 agent tools, shared by Kandev MCP, the bridge API and `mindmap-patch` blocks |
 | `server/web/` | loopback HTTP + WS server (`/m/<token>/...`, `/agent/v1/...`); embeds `server/web/dist` |
 | `ui/src/canvas/` | the canvas (layout, cards, pan/zoom, keyboard, presence, ghosts, inspector, palette), host-agnostic |
@@ -33,7 +51,7 @@ in `.kandev-sdk-ref` (the SDK is not published as its own module yet).
 ```sh
 make test          # go test -race, tsc, vitest
 make package-host  # builds kandev-plugin-mindmap-<version>.tar.gz for this platform
-curl -F package=@kandev-plugin-mindmap-0.1.0.tar.gz http://127.0.0.1:38430/api/plugins/install
+curl -F package=@kandev-plugin-mindmap-0.2.0.tar.gz http://127.0.0.1:38430/api/plugins/install
 ```
 
 UI development without Kandev or the Go backend:
