@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "bundle:ui": "node scripts/build-ui.mjs",
     "build:ui": "npm run typecheck && npm run bundle:ui",
-    "test:ui": "vitest run tests",
+    "test:ui": "vitest run --dir tests",
     "sync:tools": "node scripts/sync-manifest-tools.mjs",
     "check:tools": "node scripts/sync-manifest-tools.mjs --check",
     "dev": "node scripts/dev.mjs"

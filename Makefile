@@ -1,4 +1,4 @@
-.PHONY: deps build test test-backend test-ui typecheck vet fmt check-format \
+.PHONY: deps build test test-backend test-ui test-bridge bridge bridge-deps typecheck vet fmt check-format \
 	bundle package package-host package-file clean
 
 # BIN and VERSION must match manifest.yaml's id and version.
@@ -23,7 +23,7 @@ build: bundle
 	mkdir -p bin
 	CGO_ENABLED=0 go build -o $(BIN) ./server
 
-test: test-backend typecheck test-ui
+test: test-backend typecheck test-ui test-bridge
 
 ## -race, plus the 1,000-node load test without -race (the transpiled SQLite
 ## is ~25x slower under the race detector, so its 1 s budget is enforced here).
@@ -84,3 +84,18 @@ package-file:
 
 clean:
 	rm -rf bin .build $(notdir $(BIN))-*.tar.gz
+
+## Agent bridge (bridge/): `bridge/dist/kandev-mindmap-mcp.mjs` (stdio MCP server) and
+## `bridge/dist/pi-extension.mjs` (Pi extension). See bridge/README.md.
+bridge-deps:
+	@test -d bridge/node_modules || npm install --prefix bridge --no-audit --no-fund
+
+bridge: bridge-deps
+	npm run typecheck --prefix bridge
+	npm run check:prompt --prefix bridge
+	npm run build --prefix bridge
+
+test-bridge: bridge-deps
+	npm run typecheck --prefix bridge
+	npm run check:prompt --prefix bridge
+	npm test --prefix bridge
