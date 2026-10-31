@@ -3,10 +3,10 @@ package tools
 import (
 	"bytes"
 	"context"
-	"image"
-	pngenc "image/png"
 	"encoding/base64"
 	"encoding/json"
+	"image"
+	pngenc "image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"

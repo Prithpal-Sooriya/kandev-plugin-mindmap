@@ -237,4 +237,3 @@ func firstNonEmpty(xs ...string) string {
 	}
 	return ""
 }
-

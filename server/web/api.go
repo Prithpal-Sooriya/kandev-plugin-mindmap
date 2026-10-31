@@ -354,4 +354,3 @@ func (s *Server) invokeTool(w http.ResponseWriter, r *http.Request) {
 	res := s.tools.Invoke(ctx, tools.Caller{Transport: contract.TransportBridge, Token: tok}, r.PathValue("name"), body)
 	writeJSON(w, 200, res)
 }
-

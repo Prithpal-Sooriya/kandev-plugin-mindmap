@@ -180,7 +180,9 @@ func TestSoftLockRejectsOthersOnly(t *testing.T) {
 	if _, err := s.Submit(m.ID, []contract.Op{createOp(m.ID, id, m.RootID, "V", "T")}, SubmitOptions{Actor: contract.Actor{ParticipantID: host.ID}}); err != nil {
 		t.Fatal(err)
 	}
-	locked := func(node string, f contract.LockField, by string) bool { return node == id && f == contract.LockTitle && by != host.ID }
+	locked := func(node string, f contract.LockField, by string) bool {
+		return node == id && f == contract.LockTitle && by != host.ID
+	}
 	_, err := s.Submit(m.ID, []contract.Op{setTitle(m.ID, id, "X")}, SubmitOptions{Actor: contract.Actor{ParticipantID: "pt_other00000001"}, Locked: locked})
 	if code(err) != contract.ErrLocked {
 		t.Fatalf("want locked, got %v", err)

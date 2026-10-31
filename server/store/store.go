@@ -203,4 +203,6 @@ func hashToken(raw string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func errNotFound(format string, a ...any) error { return contract.Errf(contract.ErrNotFound, format, a...) }
+func errNotFound(format string, a ...any) error {
+	return contract.Errf(contract.ErrNotFound, format, a...)
+}

@@ -156,7 +156,9 @@ const internalKey ctxKey = 1
 const InternalToken = "_internal"
 
 // WithInternal marks a request as coming from an authenticated webhook.
-func WithInternal(ctx context.Context) context.Context { return context.WithValue(ctx, internalKey, true) }
+func WithInternal(ctx context.Context) context.Context {
+	return context.WithValue(ctx, internalKey, true)
+}
 
 // principal is an authenticated /m/<token>/ caller.
 type principal struct {
