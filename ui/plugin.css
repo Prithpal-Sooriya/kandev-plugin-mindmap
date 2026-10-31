@@ -1,0 +1,15 @@
+/* kandev-plugin-mindmap: colors come from Kandev's CSS custom properties. */
+.mm-page {
+  padding: 24px;
+  color: var(--foreground);
+  font-size: 14px;
+}
+.mm-page h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.mm-page li {
+  margin: 4px 0;
+  font-family: ui-monospace, monospace;
+}

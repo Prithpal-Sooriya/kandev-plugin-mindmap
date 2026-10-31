@@ -1,167 +1,84 @@
-// Package main tests. Exercises templatePlugin's Plugin methods (OnEvent and
-// HandleWebhook) via direct calls against a fakeHost — no
-// go-plugin subprocess needed. This is the fast, hermetic way to test a
-// kandev plugin's backend half; copy the fakeHost pattern for your own tests.
 package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"sync"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/kandev/kandev/pkg/pluginsdk"
-	"github.com/stretchr/testify/require"
 )
 
-// fakeHost is an in-memory pluginsdk.Host test double that actually stores
-// state (unlike a call-recording spy), so tests can assert the
-// get-then-increment-then-set round trip. SetState round-trips values through
-// JSON, mirroring the real Host's protobuf Struct conversion: numbers always
-// come back as float64, never the original Go numeric type — a fake that just
-// stored the raw Go value would hide bugs like reading a JSON number as int.
-// UnimplementedHostData satisfies the Host data API accessors this plugin
-// doesn't use.
-type fakeHost struct {
-	pluginsdk.UnimplementedHostData
-	mu     sync.Mutex
-	state  map[string]map[string]any
-	config map[string]any
+func newTestPlugin(t *testing.T) *mindmapPlugin {
+	t.Helper()
+	t.Setenv("KANDEV_PLUGIN_DATA_DIR", t.TempDir())
+	return newPlugin()
 }
 
-func newFakeHost() *fakeHost {
-	return &fakeHost{state: make(map[string]map[string]any)}
-}
-
-func stateKey(scope, scopeID, key string) string {
-	return scope + "/" + scopeID + "/" + key
-}
-
-func (h *fakeHost) GetState(_ context.Context, scope, scopeID, key string) (map[string]any, bool, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	v, ok := h.state[stateKey(scope, scopeID, key)]
-	return v, ok, nil
-}
-
-func (h *fakeHost) SetState(_ context.Context, scope, scopeID, key string, value map[string]any) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.state[stateKey(scope, scopeID, key)] = jsonRoundTrip(value)
-	return nil
-}
-
-// jsonRoundTrip marshals v to JSON and back into map[string]any, so numeric
-// values normalize to float64 exactly like structpb.Struct.AsMap() does on
-// the real wire.
-func jsonRoundTrip(v map[string]any) map[string]any {
-	data, err := json.Marshal(v)
+func TestMindmapPingLogsAndPongs(t *testing.T) {
+	p := newTestPlugin(t)
+	res, err := p.InvokeAgentTool(context.Background(), &pluginsdk.AgentToolRequest{
+		Name:      "mindmap_ping",
+		Arguments: map[string]any{"msg": "hello", "blob": strings.Repeat("x", 500)},
+		Context:   pluginsdk.AgentToolContext{TaskID: "t1", SessionID: "s1", Surface: "kanban-task"},
+	})
+	if err != nil || res.Text != "pong" || res.IsError {
+		t.Fatalf("unexpected result %+v err=%v", res, err)
+	}
+	b, err := os.ReadFile(filepath.Join(p.dataDir, "ping.log"))
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	var out map[string]any
-	if err := json.Unmarshal(data, &out); err != nil {
-		panic(err)
+	for _, want := range []string{`"task_id":"t1"`, `"session_id":"s1"`, `"msg":"hello"`, `string len=500`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("log missing %s: %s", want, b)
+		}
 	}
-	return out
 }
 
-func (h *fakeHost) DeleteState(context.Context, string, string, string) error { return nil }
-
-func (h *fakeHost) ListState(context.Context, string, string) ([]pluginsdk.StateEntry, error) {
-	return nil, nil
-}
-
-// GetConfig returns the operator-saved settings the real Host reads from
-// kandev's plugin config store.
-func (h *fakeHost) GetConfig(context.Context) (map[string]any, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.config == nil {
-		return map[string]any{}, nil
-	}
-	return h.config, nil
-}
-
-func (h *fakeHost) RevealSecret(context.Context, string) (string, error) { return "", nil }
-
-func (h *fakeHost) GetSecret(context.Context, string) (string, bool, error) {
-	return "", false, nil
-}
-func (h *fakeHost) SetSecret(context.Context, string, string) error { return nil }
-func (h *fakeHost) DeleteSecret(context.Context, string) error      { return nil }
-
-func (h *fakeHost) EmitEvent(context.Context, string, map[string]any) error { return nil }
-
-var _ pluginsdk.Host = (*fakeHost)(nil)
-
-func TestOnEvent_NoHost_ReturnsNilWithoutPanicking(t *testing.T) {
-	p := &templatePlugin{}
-	err := p.OnEvent(context.Background(), &pluginsdk.Event{EventID: "e1", EventType: "task.created"})
-	require.NoError(t, err)
-}
-
-func TestOnEvent_IncrementsEventCountViaHostState(t *testing.T) {
-	p := &templatePlugin{}
-	host := newFakeHost()
-	p.SetHost(host)
-
-	require.NoError(t, p.OnEvent(context.Background(), &pluginsdk.Event{EventID: "e1", EventType: "task.created"}))
-	value, found, err := host.GetState(context.Background(), "instance", "", eventCountStateKey)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.InEpsilon(t, float64(1), value["count"], 0)
-
-	require.NoError(t, p.OnEvent(context.Background(), &pluginsdk.Event{EventID: "e2", EventType: "task.created"}))
-	value, found, err = host.GetState(context.Background(), "instance", "", eventCountStateKey)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.InEpsilon(t, float64(2), value["count"], 0)
-}
-
-// errHost fails every SetState call, to prove OnEvent surfaces a Host write
-// failure rather than silently swallowing it.
-type errHost struct {
-	fakeHost
-}
-
-func (h *errHost) SetState(context.Context, string, string, string, map[string]any) error {
-	return errors.New("boom")
-}
-
-func TestOnEvent_PropagatesHostSetStateError(t *testing.T) {
-	p := &templatePlugin{}
-	p.SetHost(&errHost{fakeHost: *newFakeHost()})
-
-	err := p.OnEvent(context.Background(), &pluginsdk.Event{EventID: "e1", EventType: "task.created"})
-	require.Error(t, err)
-}
-
-func TestHandleWebhook_DefaultGreetingWithoutHost(t *testing.T) {
-	p := &templatePlugin{}
-
-	resp, err := p.HandleWebhook(context.Background(), &pluginsdk.WebhookRequest{
-		WebhookKey: "ping",
-		Method:     "POST",
-		Body:       []byte(`{"ping":true}`),
+func TestOnEventRecords(t *testing.T) {
+	p := newTestPlugin(t)
+	err := p.OnEvent(context.Background(), &pluginsdk.Event{
+		EventID: "e1", EventType: "agent.completed", Payload: map[string]any{"task_id": "t1"},
 	})
-	require.NoError(t, err)
-	require.Equal(t, int32(200), resp.Status)
-	require.Equal(t, "Hello, webhook!", string(resp.Body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(p.dataDir, "events.log"))
+	if !strings.Contains(string(b), `"event_type":"agent.completed"`) {
+		t.Fatalf("event not logged: %s", b)
+	}
 }
 
-func TestHandleWebhook_UsesOperatorConfig(t *testing.T) {
-	p := &templatePlugin{}
-	host := newFakeHost()
-	host.config = map[string]any{"greeting": "Howdy", "api_token": "secret"}
-	p.SetHost(host)
+func TestProbeServerWebSocketEcho(t *testing.T) {
+	p := newTestPlugin(t)
+	srv, err := p.ensureServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.http.Close() })
+	c, _, err := websocket.DefaultDialer.Dial("ws://"+srv.addr+"/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, _, err := c.ReadMessage(); err != nil { // hello frame
+		t.Fatal(err)
+	}
+	_ = c.WriteMessage(websocket.TextMessage, []byte("hi"))
+	_, msg, err := c.ReadMessage()
+	if err != nil || string(msg) != "echo:hi" {
+		t.Fatalf("got %q err=%v", msg, err)
+	}
+}
 
-	resp, err := p.HandleWebhook(context.Background(), &pluginsdk.WebhookRequest{
-		WebhookKey: "ping",
-		Method:     "POST",
-	})
-	require.NoError(t, err)
-	require.Equal(t, int32(200), resp.Status)
-	require.Equal(t, "Howdy, webhook!", string(resp.Body))
+func TestSQLiteProbeWorksWithoutCGO(t *testing.T) {
+	out := sqliteProbe(t.TempDir())
+	if out["error"] != nil || out["version"] == nil {
+		t.Fatalf("sqlite probe failed: %v", out)
+	}
 }

@@ -1,21 +1,26 @@
 {
-  "name": "kandev-plugin-template-contract-tests",
+  "name": "kandev-plugin-mindmap",
   "private": true,
   "type": "module",
+  "version": "0.0.1",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
-    "test:recipes": "vitest run recipes/source-control/ui",
-    "typecheck:recipes": "tsc --project tsconfig.recipes.json --noEmit",
-    "test:ui": "node --test tests/ui-action.test.js"
+    "typecheck": "tsc --noEmit",
+    "bundle:ui": "esbuild ui/src/register.tsx --bundle --format=esm --target=es2022 --jsx=transform --jsx-factory=h --jsx-fragment=Fragment --outfile=ui/bundle.js --legal-comments=none",
+    "build:ui": "npm run typecheck && npm run bundle:ui",
+    "test:ui": "vitest run tests"
   },
   "devDependencies": {
-    "@kandev/plugin-sdk": "file:../kandev/apps/packages/plugin-sdk",
+    "@kandev/plugin-sdk": "file:../kandev-sdk/apps/packages/plugin-sdk",
+    "@types/node": "^24.19.2",
+    "esbuild": "0.25.10",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
   },
   "overrides": {
-    "nanoid": "5.1.16"
+    "nanoid": "5.1.16",
+    "vite": "8.3.4"
   }
 }
