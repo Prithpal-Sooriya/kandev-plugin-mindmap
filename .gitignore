@@ -6,3 +6,5 @@
 # Standalone guest app build output (make bundle); only the placeholder is tracked.
 /server/web/dist/*
 !/server/web/dist/index.html
+/bridge/dist/
+/bridge/node_modules/
