@@ -7,6 +7,7 @@ import { AvatarStack, HarnessBadge, ringFor } from "./agent";
 import type { MapController } from "./controller";
 import { Icon, ICONS, KIND_LABEL, KindIcon } from "./icons";
 import { renderMarkdown } from "./markdown";
+import { RunActions } from "./RunActions";
 
 export function Inspector(props: { ctl: MapController; onClose: () => void }) {
   const { ctl } = props;
@@ -125,6 +126,14 @@ export function Inspector(props: { ctl: MapController; onClose: () => void }) {
             <div className="mm-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(node.body_md) }} />
           ) : <p className="mm-muted">No notes yet.</p>}
         </div>
+        {node.question ? (
+          <div className="mm-field">
+            <span>Question</span>
+            {node.question.answer
+              ? <p>Answered: <strong>{node.question.answer}</strong></p>
+              : <p className="mm-muted">Waiting for an answer. Select the node on the canvas to answer it.</p>}
+          </div>
+        ) : null}
         {node.sources?.length ? (
           <div className="mm-field">
             <span>Sources ({node.sources.length})</span>
@@ -155,6 +164,8 @@ export function Inspector(props: { ctl: MapController; onClose: () => void }) {
                 <span className={`mm-chip mm-chip-${r.status}`}>{r.status}{r.waiting_reason ? ` (${r.waiting_reason})` : ""}</span>
                 {r.last_output ? <div className="mm-muted mm-ellipsis">{r.last_output}</div> : null}
                 <LiveOutput ctl={ctl} run={r} />
+                {r.error && r.status === "failed" ? <div className="mm-err mm-small">{r.error}</div> : null}
+                <RunActions ctl={ctl} run={r} />
               </div>
             ))}
             <AvatarStack people={agents} size="sm" />

@@ -3,7 +3,7 @@
 //   ui/src/standalone/adapter.ts  guest web app (own React, /m/<token>/ paths)
 import type {
   ActivityEvent, AgentProfile, CreateMapRequestShape, Infer, MapSummary, MindMap, Op, OutputLine, Participant, Proposal,
-  ReviewProposalRequest, Run, ShareLink, StartRunRequest,
+  RepoInfo, ReviewProposalRequest, Run, ShareLink, StartRunRequest, SwarmRequest, TaskRunInfo,
 } from "../contract";
 import type { MapEndpoints, WsFactory } from "../transport/connection";
 
@@ -19,6 +19,17 @@ export interface MapApi {
   profiles(): Promise<AgentProfile[]>;
   reviewProposal(proposalId: string, req: ReviewProposalRequest): Promise<Proposal>;
   startRun(mapId: string, req: StartRunRequest): Promise<Run[]>;
+  /** Coordinator run first, then one run per lens. */
+  startSwarm(mapId: string, req: SwarmRequest): Promise<Run[]>;
+  stopRun(runId: string): Promise<void>;
+  messageRun(runId: string, text: string): Promise<void>;
+  answerQuestion(mapId: string, nodeId: string, answer: string): Promise<void>;
+  /** Repositories of the map's workspace, for execute runs. */
+  repos(mapId: string): Promise<RepoInfo[]>;
+  /** The run behind a Kandev task and its branch (task panel; local hosts only). */
+  taskRun(taskId: string): Promise<TaskRunInfo>;
+  /** Task ids of every mind map run (local hosts only). */
+  runTasks(): Promise<string[]>;
   /** Server-side per-author undo (protocol §13): reverts the caller's latest batch. */
   undo(mapId: string): Promise<{ ops: Op[]; rev: number }>;
   getOps?(mapId: string, from: number, to: number): Promise<{ ops: Op[] }>;

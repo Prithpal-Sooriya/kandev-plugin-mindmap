@@ -12,8 +12,11 @@ import { useStore } from "./hooks";
 import { Icon, ICONS } from "./icons";
 import { Inspector } from "./Inspector";
 import type { Command } from "./keys";
+import { agentMenuItems, NodeMenu } from "./NodeMenu";
 import { Palette, type PaletteAction } from "./Palette";
 import { ShareControls } from "./ShareDialog";
+import { RunDialog } from "./RunDialog";
+import type { RunKind } from "./runForm";
 
 function fontFamily(): string {
   const v = typeof document !== "undefined" ? getComputedStyle(document.documentElement).getPropertyValue("--font-sans").trim() : "";
@@ -37,6 +40,18 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
   }, [ctl]);
   useStore(ctl);
   const apiRef = React.useRef(null as CanvasApi | null);
+  const [dialog, setDialog] = React.useState(null as { kind: RunKind; nodeId: string } | null);
+  const [menu, setMenu] = React.useState(null as { nodeId: string; x: number; y: number } | null);
+
+  // ?node=<id> (links from a task panel) selects that node once it has loaded.
+  const pendingNode = React.useRef(typeof location !== "undefined" ? new URLSearchParams(location.search).get("node") : null);
+  React.useEffect(() => {
+    const id = pendingNode.current;
+    if (!id || !ctl.node(id)) return;
+    pendingNode.current = null;
+    ctl.select(id);
+    setTimeout(() => apiRef.current?.reveal(id), 60);
+  });
 
   const onCommand = React.useCallback((c: Command) => {
     if (c.type === "palette") {
@@ -74,13 +89,20 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
   const proposals = [...e.proposals.values()].filter((p) => p.status === "open" || p.status === "ready");
   const pendingItems = proposals.reduce((n, p) => n + p.items.filter((i) => i.status === "pending").length, 0);
 
-  const stub = (label: string) => () => host.toast(`${label} arrives in Phase 2.`, "info");
+  const stub = (label: string) => () => host.toast(`${label} arrives in a later phase.`, "info");
+  const openRun = (kind: RunKind, nodeId = ctl.selection ?? ctl.rootId) => {
+    if (!nodeId) return;
+    setMenu(null);
+    setDialog({ kind, nodeId });
+  };
+  const selected = ctl.node(ctl.selection) ?? ctl.node(ctl.rootId);
   const actions: PaletteAction[] = [
-    { id: "run", label: "Run agent on this node…", hint: "Phase 2", run: stub("Run agent") },
-    { id: "swarm", label: "Swarm this node…", hint: "Phase 2", run: stub("Swarm") },
-    { id: "explore", label: "Explore from here…", hint: "Phase 2", run: stub("Explore") },
-    { id: "garden", label: "Garden the map…", hint: "Phase 2", run: stub("Garden") },
-    { id: "compile", label: "Compile branch to docs…", hint: "Phase 2", run: stub("Compile") },
+    { id: "run", label: "Run agent on this node…", run: () => openRun("run") },
+    { id: "swarm", label: "Swarm this node…", run: () => openRun("swarm") },
+    { id: "explore", label: "Explore from here…", run: () => openRun("explore") },
+    { id: "garden", label: "Garden the map…", run: () => openRun("garden", ctl.rootId) },
+    ...(selected?.kind === "action" ? [{ id: "execute", label: "Execute this action…", run: () => openRun("execute") }] : []),
+    { id: "compile", label: "Compile branch to docs…", hint: "Later", run: stub("Compile") },
     { id: "fit", label: "Fit map to screen", hint: IS_MAC ? "⌘0" : "Ctrl 0", run: () => apiRef.current?.fit() },
     { id: "ghosts", label: ctl.showGhosts ? "Hide proposed changes" : "Show proposed changes", run: () => ctl.toggleGhosts() },
     { id: "inspector", label: ctl.inspectorOpen ? "Close inspector" : "Open inspector", hint: "⇧Enter", run: () => { ctl.inspectorOpen = !ctl.inspectorOpen; ctl.bump(); } },
@@ -137,13 +159,28 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
         </div>
       ) : null}
       <div className="mm-body">
-        <Canvas ctl={ctl} apiRef={apiRef} onCommand={onCommand} />
+        <Canvas ctl={ctl} apiRef={apiRef} onCommand={onCommand} onNodeMenu={(nodeId, x, y) => setMenu({ nodeId, x, y })} />
         {ctl.inspectorOpen ? <Inspector ctl={ctl} onClose={() => { ctl.inspectorOpen = false; ctl.bump(); }} /> : null}
       </div>
       {ctl.paletteOpen ? (
         <Palette ctl={ctl} actions={actions} onClose={closePalette} onPick={(id) => {
           ctl.select(id);
           apiRef.current?.reveal(id);
+        }} />
+      ) : null}
+      {menu && ctl.node(menu.nodeId) ? (
+        <NodeMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={[
+          agentMenuItems(ctl.node(menu.nodeId)!, (kind) => openRun(kind, kind === "garden" ? ctl.rootId : menu.nodeId)),
+          [
+            { id: "child", label: "Add child", run: () => apiRef.current?.command({ type: "addChild" }) },
+            { id: "inspect", label: "Open inspector", run: () => { ctl.inspectorOpen = true; ctl.bump(); } },
+          ],
+        ]} />
+      ) : null}
+      {dialog ? (
+        <RunDialog ctl={ctl} kind={dialog.kind} nodeId={dialog.nodeId} onClose={() => {
+          setDialog(null);
+          apiRef.current?.focus();
         }} />
       ) : null}
       {props.dev && /[?&](perf|seed)=/.test(location.search) ? <PerfOverlay ctl={ctl} /> : null}

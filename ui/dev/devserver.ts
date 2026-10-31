@@ -129,6 +129,7 @@ const httpServer = createServer(async (req, res) => {
     if (path === "/profiles") {
       return send(res, 200, [{ id: "profile-claude", name: "Claude", harness: "claude" }, { id: "profile-cursor", name: "Cursor", harness: "cursor" }]);
     }
+    if (path === "/repos") return send(res, 200, [{ id: "repo-demo", name: "example-app" }]);
     if ((r = /^\/maps\/([^/]+)\/(snapshot|sync|ops|undo|runs|swarms|compile|suggest)$/.exec(path))) {
       const mapId = r[1]!;
       if (!allowed(mapId) || !server.maps.has(mapId)) return send(res, 404, sc.kind === "share" ? "" : { error: { code: "not_found", message: "no such map" } });
