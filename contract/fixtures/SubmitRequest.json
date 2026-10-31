@@ -1,0 +1,31 @@
+[
+  {
+    "client_id": "tab-7f3a",
+    "ops": [
+      {
+        "id": "op_move000000001",
+        "map_id": "map_demo00000001",
+        "rev": 0,
+        "type": "node.move",
+        "payload": {
+          "id": "nd_example00001",
+          "parent_id": "nd_root00000001",
+          "order": "a"
+        },
+        "actor": {
+          "participant_id": "pt_host00000001"
+        },
+        "ts": "2026-10-01T12:30:00Z"
+      }
+    ]
+  },
+  {
+    "client_id": "tab-7f3a",
+    "ops": [],
+    "presence": {
+      "participant_id": "pt_agent0000001",
+      "focus_node_id": "nd_example00001",
+      "updated_at": "2026-10-01T12:05:00Z"
+    }
+  }
+]

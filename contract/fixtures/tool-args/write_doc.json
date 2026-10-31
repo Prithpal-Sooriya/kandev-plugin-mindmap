@@ -1,0 +1,43 @@
+{
+  "valid": [
+    {
+      "title": "Pricing",
+      "path": "pricing/index.md",
+      "body": "# Pricing"
+    },
+    {
+      "doc_id": "nd_doc0000000001",
+      "parent_doc_id": "@overview",
+      "title": "Tiers",
+      "path": "pricing/tiers.md",
+      "body": "x",
+      "source_ids": [
+        "nd_example00001"
+      ],
+      "ref": "tiers-doc"
+    }
+  ],
+  "invalid": [
+    {
+      "title": "t",
+      "body": "x"
+    }
+  ],
+  "semantic": [
+    {
+      "title": "t",
+      "path": "/abs.md",
+      "body": "x"
+    },
+    {
+      "title": "t",
+      "path": "../up.md",
+      "body": "x"
+    },
+    {
+      "title": "t",
+      "path": "a.txt",
+      "body": "x"
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "valid": [
+    {
+      "reason": "Group pricing ideas",
+      "ops": [
+        {
+          "op": "regroup",
+          "node_ids": [
+            "nd_example00001",
+            "nd_question0001"
+          ],
+          "title": "Evidence",
+          "kind": "topic",
+          "ref": "evidence",
+          "parent_id": "nd_pricing000001"
+        },
+        {
+          "op": "move",
+          "node_id": "nd_risk00000001",
+          "parent_id": "@evidence",
+          "after_id": "nd_example00001"
+        },
+        {
+          "op": "merge",
+          "into_id": "nd_example00001",
+          "node_ids": [
+            "nd_question0001"
+          ],
+          "reason": "duplicate"
+        },
+        {
+          "op": "rename",
+          "node_id": "nd_pricing000001",
+          "title": "Pricing"
+        },
+        {
+          "op": "retire",
+          "node_id": "nd_risk00000001"
+        }
+      ]
+    }
+  ],
+  "invalid": [
+    {
+      "ops": [
+        {
+          "op": "retire",
+          "node_id": "nd_risk00000001"
+        }
+      ]
+    },
+    {
+      "reason": "r",
+      "ops": []
+    },
+    {
+      "reason": "r",
+      "ops": [
+        {
+          "op": "delete",
+          "node_id": "nd_risk00000001"
+        }
+      ]
+    }
+  ],
+  "semantic": [
+    {
+      "reason": "r",
+      "ops": [
+        {
+          "op": "move",
+          "node_id": "nd_risk00000001"
+        }
+      ]
+    },
+    {
+      "reason": "r",
+      "ops": [
+        {
+          "op": "regroup",
+          "node_ids": [
+            "nd_example00001"
+          ]
+        }
+      ]
+    }
+  ]
+}

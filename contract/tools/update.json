@@ -1,0 +1,111 @@
+{
+  "name": "update",
+  "description": "Edit one existing node: rename it, replace or append to its body, change its kind, add or remove tags, set confidence, or add sources. Use append_body to add findings without losing what is there. Prefer this over adding a near-duplicate node. Respects soft locks: if a human is editing the field you get a locked error; try again later or append instead.",
+  "annotations": {
+    "read_only_hint": false,
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "node_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "The node to edit. Node id (nd_...) or an @ref you set earlier in this run."
+      },
+      "title": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "New one-line title."
+      },
+      "body": {
+        "type": "string",
+        "maxLength": 65536,
+        "description": "Replace the whole markdown body. Use append_body to add instead."
+      },
+      "append_body": {
+        "type": "string",
+        "maxLength": 65536,
+        "description": "Markdown appended after a blank line."
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "idea",
+          "research",
+          "example",
+          "question",
+          "decision",
+          "risk",
+          "action",
+          "topic"
+        ],
+        "description": "New kind."
+      },
+      "add_tags": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "description": "Short lowercase tags, no spaces or #, e.g. [\"pricing\", \"b2b\"]."
+      },
+      "remove_tags": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "description": "Tags to remove."
+      },
+      "confidence": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "New confidence, 0-1."
+      },
+      "add_sources": {
+        "type": "array",
+        "maxItems": 50,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "url"
+          ],
+          "properties": {
+            "url": {
+              "type": "string",
+              "maxLength": 2048,
+              "description": "Absolute http(s) URL of the evidence."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 300,
+              "description": "Page or document title."
+            },
+            "quote": {
+              "type": "string",
+              "maxLength": 1000,
+              "description": "Short verbatim excerpt that supports the claim."
+            },
+            "accessed_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When you read it (RFC 3339). Defaults to now."
+            }
+          }
+        },
+        "description": "Evidence to add. Duplicates (same url) are ignored."
+      }
+    },
+    "required": [
+      "node_id"
+    ]
+  }
+}

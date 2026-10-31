@@ -1,0 +1,22 @@
+[
+  {
+    "applied": true,
+    "rev": 43,
+    "node_ids": [
+      "nd_example00001"
+    ],
+    "refs": {
+      "ex1": "nd_example00001"
+    },
+    "budget": {
+      "nodes": 33,
+      "subagents": 3,
+      "depth": 1
+    }
+  },
+  {
+    "applied": false,
+    "proposal_id": "prp_garden000001",
+    "rev": 42
+  }
+]

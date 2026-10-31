@@ -1,0 +1,17 @@
+{
+  "valid": [
+    {},
+    {
+      "subtree_depth": 3
+    }
+  ],
+  "invalid": [
+    {
+      "subtree_depth": 9
+    },
+    {
+      "depth": 1
+    }
+  ],
+  "semantic": []
+}

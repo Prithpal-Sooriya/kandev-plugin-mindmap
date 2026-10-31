@@ -1,0 +1,44 @@
+{
+  "valid": [
+    {
+      "agents": [
+        {
+          "node_id": "nd_pricing000001",
+          "goal": "Find examples",
+          "template": "research",
+          "lens": "skeptic",
+          "profile": "Claude",
+          "mode": "propose",
+          "budget": {
+            "max_depth": 2,
+            "max_nodes": 10,
+            "max_subagents": 0,
+            "max_minutes": 30
+          }
+        }
+      ]
+    }
+  ],
+  "invalid": [
+    {
+      "agents": []
+    },
+    {
+      "agents": [
+        {
+          "node_id": "nd_pricing000001"
+        }
+      ]
+    },
+    {
+      "agents": [
+        {
+          "node_id": "nd_pricing000001",
+          "goal": "g",
+          "template": "garden"
+        }
+      ]
+    }
+  ],
+  "semantic": []
+}

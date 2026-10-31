@@ -1,0 +1,108 @@
+{
+  "name": "restructure",
+  "description": "Reorganise the map in one batch. Each op is one of: move (node_id under parent_id, optional after_id); merge (fold node_ids into into_id: bodies appended, sources and children kept, links rewired); regroup (create a new parent titled title under parent_id, default the nodes' common parent, and move node_ids under it; set ref to name it); rename (node_id to title); retire (remove node_id and its subtree; it can be undone). Moves that would create a cycle are rejected. Give a one-sentence reason; reviewers see it. Organiser runs are usually in propose mode, so this becomes a proposal.",
+  "annotations": {
+    "read_only_hint": false,
+    "destructive_hint": true,
+    "idempotent_hint": false,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "reason": {
+        "type": "string",
+        "maxLength": 500,
+        "description": "Why, in one sentence. Required."
+      },
+      "ops": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 50,
+        "description": "Applied in order.",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "op"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "move",
+                "merge",
+                "regroup",
+                "rename",
+                "retire"
+              ]
+            },
+            "node_id": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "move, rename, retire: the node."
+            },
+            "node_ids": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "description": "merge: nodes folded into into_id. regroup: nodes to move under the new parent."
+            },
+            "parent_id": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "move: new parent. regroup: where the new parent goes."
+            },
+            "after_id": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "move: place after this sibling. Default last."
+            },
+            "into_id": {
+              "type": "string",
+              "maxLength": 64,
+              "description": "merge: the node that survives."
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "rename: new title. regroup: title of the new parent."
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "idea",
+                "research",
+                "example",
+                "question",
+                "decision",
+                "risk",
+                "action",
+                "topic"
+              ],
+              "description": "regroup: kind of the new parent. Default topic."
+            },
+            "ref": {
+              "type": "string",
+              "maxLength": 48,
+              "description": "regroup: label for the new parent, usable later as @ref."
+            },
+            "reason": {
+              "type": "string",
+              "maxLength": 500,
+              "description": "Optional per-op reason."
+            }
+          }
+        }
+      }
+    },
+    "required": [
+      "reason",
+      "ops"
+    ]
+  }
+}

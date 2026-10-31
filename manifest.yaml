@@ -2,7 +2,7 @@ id: "kandev-plugin-mindmap"
 api_version: 1
 version: "0.0.1"
 display_name: "Mind Map"
-description: "An agentic, multiplayer mind map. Phase 0: scaffold plus capability probes."
+description: "An agentic, multiplayer mind map: you and your agents branch out, research, reorganise and compile docs together."
 author: "Prithpal-Sooriya"
 categories: ["tools"]
 license: "MIT"
@@ -25,25 +25,1010 @@ capabilities:
     - "agent.completed"
     - "agent.failed"
 
+# BEGIN generated agent_tools: edit contract/tools/*.json, then run `npm run sync:tools`
 agent_tools:
-  - name: mindmap_ping
-    description: "Spike probe. Records the call (task id, session id, arguments) and returns 'pong'."
+  - name: context
+    description: "Call this FIRST in every mind map run, and again if you lose track. Returns your brief and goal, run mode (apply = writes go live; propose = writes become a proposal a human reviews), template and lens, your node with its ancestors and an id-tagged outline of its subtree, budget left (nodes, sub-agents, depth), your open ask_human questions with any answers, and nodes other agents have claimed nearby. Read-only."
     surfaces: [kanban-task, office-task]
-    input_schema:
-      type: object
-      properties:
-        msg:
-          type: string
-          description: "Any short text."
-        blob:
-          type: string
-          description: "Optional large payload, used to probe argument size limits."
-      additionalProperties: false
-    annotations:
-      read_only_hint: true
-      destructive_hint: false
-      idempotent_hint: true
-      open_world_hint: false
+    annotations: {"read_only_hint":true,"destructive_hint":false,"idempotent_hint":true,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subtree_depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6,
+            "description": "Levels of your subtree to include. Default 2."
+          }
+        }
+      }
+  - name: read
+    description: "Read part of the map as an indented, id-tagged outline: one line per node with [id], kind, status, source count and confidence. Use it to see a branch before adding to it or reorganising it. Defaults to the whole map from the root, 3 levels deep, without bodies. Large results are paged: pass next_cursor back as cursor. Read-only."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":true,"destructive_hint":false,"idempotent_hint":true,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Start here instead of the root. Node id (nd_...) or an @ref you set earlier in this run."
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Levels below the start node. Default 3."
+          },
+          "include_bodies": {
+            "type": "boolean",
+            "description": "Include markdown bodies and sources. Default false; turn on only for small branches."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "next_cursor from a previous read, to get the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Max nodes per page. Default 200."
+          },
+          "map_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Read another map in the same workspace (read-only). Omit for your own map."
+          }
+        }
+      }
+  - name: search
+    description: "Find nodes by text and filters. Use it before adding to avoid duplicates, and to find related ideas worth linking. Matches titles, bodies, tags and source titles. Give a query, filters, or both. Results are id-tagged lines with the node's path. Read-only."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":true,"destructive_hint":false,"idempotent_hint":true,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Words to match. Optional if you give filters."
+          },
+          "kinds": {
+            "type": "array",
+            "maxItems": 9,
+            "items": {
+              "type": "string",
+              "enum": [
+                "topic",
+                "idea",
+                "research",
+                "example",
+                "question",
+                "decision",
+                "risk",
+                "action",
+                "doc"
+              ]
+            },
+            "description": "Only these kinds."
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "description": "Only nodes with all of these tags."
+          },
+          "statuses": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "string",
+              "enum": [
+                "idle",
+                "claimed",
+                "running",
+                "review",
+                "done",
+                "failed"
+              ]
+            },
+            "description": "Only these statuses."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "map",
+              "subtree",
+              "workspace"
+            ],
+            "description": "map (default) = your map; subtree = under node_id; workspace = every map in the workspace."
+          },
+          "node_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Subtree root, required when scope is subtree. Node id (nd_...) or an @ref you set earlier in this run."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Max results. Default 20."
+          }
+        }
+      }
+  - name: add
+    description: "Add one or more nodes, optionally nested, in one call. Use it for ideas, research findings, real-world examples (kind example with a source), questions, risks, decisions and actions. Batch related nodes into one call (up to 100 nodes, 3 levels deep) instead of many small calls. Cite evidence in sources, not in the body. Search first to avoid duplicates. Set ref on a node to refer to it later as @ref. Counts against your node budget. In propose mode the nodes appear as a proposal for review."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":false,"destructive_hint":false,"idempotent_hint":false,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "parent_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Where to add. Default: your run's node. Node id (nd_...) or an @ref you set earlier in this run."
+          },
+          "after_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Insert after this existing child of parent_id. Default: after the last child."
+          },
+          "nodes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "title"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "maxLength": 48,
+                  "description": "Optional label (a-z0-9_-) so later calls can say @label instead of the id."
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "One line, specific. Required."
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "idea",
+                    "research",
+                    "example",
+                    "question",
+                    "decision",
+                    "risk",
+                    "action",
+                    "topic"
+                  ],
+                  "description": "Default idea. Use example for real-world cases (with a source), research for findings, question for open questions."
+                },
+                "body": {
+                  "type": "string",
+                  "maxLength": 65536,
+                  "description": "Markdown detail. Keep it short; put evidence in sources."
+                },
+                "tags": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "description": "Short lowercase tags, no spaces or #, e.g. [\"pricing\", \"b2b\"]."
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "How sure you are, 0-1. Set it for claims."
+                },
+                "sources": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "url"
+                    ],
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "description": "Absolute http(s) URL of the evidence."
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "description": "Page or document title."
+                      },
+                      "quote": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "Short verbatim excerpt that supports the claim."
+                      },
+                      "accessed_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "When you read it (RFC 3339). Defaults to now."
+                      }
+                    }
+                  },
+                  "description": "Evidence for this node. Research and example nodes should have at least one."
+                },
+                "children": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "title"
+                    ],
+                    "properties": {
+                      "ref": {
+                        "type": "string",
+                        "maxLength": 48,
+                        "description": "Optional label (a-z0-9_-) so later calls can say @label instead of the id."
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "One line, specific. Required."
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "idea",
+                          "research",
+                          "example",
+                          "question",
+                          "decision",
+                          "risk",
+                          "action",
+                          "topic"
+                        ],
+                        "description": "Default idea. Use example for real-world cases (with a source), research for findings, question for open questions."
+                      },
+                      "body": {
+                        "type": "string",
+                        "maxLength": 65536,
+                        "description": "Markdown detail. Keep it short; put evidence in sources."
+                      },
+                      "tags": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 40
+                        },
+                        "description": "Short lowercase tags, no spaces or #, e.g. [\"pricing\", \"b2b\"]."
+                      },
+                      "confidence": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "description": "How sure you are, 0-1. Set it for claims."
+                      },
+                      "sources": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "url"
+                          ],
+                          "properties": {
+                            "url": {
+                              "type": "string",
+                              "maxLength": 2048,
+                              "description": "Absolute http(s) URL of the evidence."
+                            },
+                            "title": {
+                              "type": "string",
+                              "maxLength": 300,
+                              "description": "Page or document title."
+                            },
+                            "quote": {
+                              "type": "string",
+                              "maxLength": 1000,
+                              "description": "Short verbatim excerpt that supports the claim."
+                            },
+                            "accessed_at": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When you read it (RFC 3339). Defaults to now."
+                            }
+                          }
+                        },
+                        "description": "Evidence for this node. Research and example nodes should have at least one."
+                      },
+                      "children": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "title"
+                          ],
+                          "properties": {
+                            "ref": {
+                              "type": "string",
+                              "maxLength": 48,
+                              "description": "Optional label (a-z0-9_-) so later calls can say @label instead of the id."
+                            },
+                            "title": {
+                              "type": "string",
+                              "maxLength": 200,
+                              "description": "One line, specific. Required."
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "idea",
+                                "research",
+                                "example",
+                                "question",
+                                "decision",
+                                "risk",
+                                "action",
+                                "topic"
+                              ],
+                              "description": "Default idea. Use example for real-world cases (with a source), research for findings, question for open questions."
+                            },
+                            "body": {
+                              "type": "string",
+                              "maxLength": 65536,
+                              "description": "Markdown detail. Keep it short; put evidence in sources."
+                            },
+                            "tags": {
+                              "type": "array",
+                              "maxItems": 20,
+                              "items": {
+                                "type": "string",
+                                "maxLength": 40
+                              },
+                              "description": "Short lowercase tags, no spaces or #, e.g. [\"pricing\", \"b2b\"]."
+                            },
+                            "confidence": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1,
+                              "description": "How sure you are, 0-1. Set it for claims."
+                            },
+                            "sources": {
+                              "type": "array",
+                              "maxItems": 50,
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "url"
+                                ],
+                                "properties": {
+                                  "url": {
+                                    "type": "string",
+                                    "maxLength": 2048,
+                                    "description": "Absolute http(s) URL of the evidence."
+                                  },
+                                  "title": {
+                                    "type": "string",
+                                    "maxLength": 300,
+                                    "description": "Page or document title."
+                                  },
+                                  "quote": {
+                                    "type": "string",
+                                    "maxLength": 1000,
+                                    "description": "Short verbatim excerpt that supports the claim."
+                                  },
+                                  "accessed_at": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "description": "When you read it (RFC 3339). Defaults to now."
+                                  }
+                                }
+                              },
+                              "description": "Evidence for this node. Research and example nodes should have at least one."
+                            }
+                          }
+                        },
+                        "description": "Child nodes, nested up to 3 levels per call."
+                      }
+                    }
+                  },
+                  "description": "Child nodes, nested up to 3 levels per call."
+                }
+              }
+            },
+            "description": "Top-level nodes to add under parent_id."
+          }
+        },
+        "required": [
+          "nodes"
+        ]
+      }
+  - name: update
+    description: "Edit one existing node: rename it, replace or append to its body, change its kind, add or remove tags, set confidence, or add sources. Use append_body to add findings without losing what is there. Prefer this over adding a near-duplicate node. Respects soft locks: if a human is editing the field you get a locked error; try again later or append instead."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":false,"destructive_hint":false,"idempotent_hint":false,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The node to edit. Node id (nd_...) or an @ref you set earlier in this run."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "New one-line title."
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 65536,
+            "description": "Replace the whole markdown body. Use append_body to add instead."
+          },
+          "append_body": {
+            "type": "string",
+            "maxLength": 65536,
+            "description": "Markdown appended after a blank line."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "idea",
+              "research",
+              "example",
+              "question",
+              "decision",
+              "risk",
+              "action",
+              "topic"
+            ],
+            "description": "New kind."
+          },
+          "add_tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "description": "Short lowercase tags, no spaces or #, e.g. [\"pricing\", \"b2b\"]."
+          },
+          "remove_tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "description": "Tags to remove."
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "New confidence, 0-1."
+          },
+          "add_sources": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "description": "Absolute http(s) URL of the evidence."
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 300,
+                  "description": "Page or document title."
+                },
+                "quote": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "description": "Short verbatim excerpt that supports the claim."
+                },
+                "accessed_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When you read it (RFC 3339). Defaults to now."
+                }
+              }
+            },
+            "description": "Evidence to add. Duplicates (same url) are ignored."
+          }
+        },
+        "required": [
+          "node_id"
+        ]
+      }
+  - name: attach
+    description: "Attach an image or file to a node: a screenshot of a web page you captured with your browser or Playwright tools, a diagram, a PDF. Give exactly one of url (the plugin downloads it), file_path (absolute path to a file you saved in your workspace; preferred for screenshots) or base64 (small images only, under about 100 KB, with mime_type). Allowed types: png, jpeg, gif, webp, svg, pdf, txt, md, csv, json; max 10 MB. Add a caption and the source_url of the page it shows."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":false,"destructive_hint":false,"idempotent_hint":false,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The node to attach to. Node id (nd_...) or an @ref you set earlier in this run."
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "http(s) URL of the file to download."
+          },
+          "file_path": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Absolute path to a local file, e.g. a screenshot you just saved."
+          },
+          "base64": {
+            "type": "string",
+            "maxLength": 1400000,
+            "description": "File bytes, base64-encoded. Small files only."
+          },
+          "mime_type": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "MIME type, e.g. image/png. Required with base64; otherwise detected."
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Display file name."
+          },
+          "caption": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "One line saying what it shows."
+          },
+          "source_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "The page the screenshot or file came from."
+          }
+        },
+        "required": [
+          "node_id"
+        ]
+      }
+  - name: restructure
+    description: "Reorganise the map in one batch. Each op is one of: move (node_id under parent_id, optional after_id); merge (fold node_ids into into_id: bodies appended, sources and children kept, links rewired); regroup (create a new parent titled title under parent_id, default the nodes' common parent, and move node_ids under it; set ref to name it); rename (node_id to title); retire (remove node_id and its subtree; it can be undone). Moves that would create a cycle are rejected. Give a one-sentence reason; reviewers see it. Organiser runs are usually in propose mode, so this becomes a proposal."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":false,"destructive_hint":true,"idempotent_hint":false,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why, in one sentence. Required."
+          },
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Applied in order.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "op"
+              ],
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "move",
+                    "merge",
+                    "regroup",
+                    "rename",
+                    "retire"
+                  ]
+                },
+                "node_id": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "move, rename, retire: the node."
+                },
+                "node_ids": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "description": "merge: nodes folded into into_id. regroup: nodes to move under the new parent."
+                },
+                "parent_id": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "move: new parent. regroup: where the new parent goes."
+                },
+                "after_id": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "move: place after this sibling. Default last."
+                },
+                "into_id": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "merge: the node that survives."
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "rename: new title. regroup: title of the new parent."
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "idea",
+                    "research",
+                    "example",
+                    "question",
+                    "decision",
+                    "risk",
+                    "action",
+                    "topic"
+                  ],
+                  "description": "regroup: kind of the new parent. Default topic."
+                },
+                "ref": {
+                  "type": "string",
+                  "maxLength": 48,
+                  "description": "regroup: label for the new parent, usable later as @ref."
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 500,
+                  "description": "Optional per-op reason."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "reason",
+          "ops"
+        ]
+      }
+  - name: link
+    description: "Add a cross-link between two nodes in different branches, outside the tree. Use it when one idea supports, contradicts, depends on or is an example of another. Give a short label (e.g. contradicts, supports, depends on, example of) and a one-sentence reason. Do not link a node to its own parent or child; the tree already shows that."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":false,"destructive_hint":false,"idempotent_hint":false,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "from_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Link source. Node id (nd_...) or an @ref you set earlier in this run."
+          },
+          "to_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Link target. Node id (nd_...) or an @ref you set earlier in this run."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "Short relation, shown on the edge."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why they are related."
+          }
+        },
+        "required": [
+          "from_id",
+          "to_id",
+          "label"
+        ]
+      }
+  - name: claim
+    description: "Claim a node before you work on it, and release it when done. A claim shows your presence on the canvas and tells other agents in a swarm to leave that branch alone. If another participant holds the claim you get a claimed error: pick a different node. Claims expire after ttl_minutes; claim again to renew. Claim frontier nodes one or a few at a time, not the whole map."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":false,"destructive_hint":false,"idempotent_hint":true,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The node (and its subtree) to claim. Node id (nd_...) or an @ref you set earlier in this run."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "claim",
+              "release"
+            ],
+            "description": "Default claim."
+          },
+          "ttl_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120,
+            "description": "Claim lifetime. Default 30."
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "What you are doing there, shown on hover."
+          }
+        },
+        "required": [
+          "node_id"
+        ]
+      }
+  - name: spawn
+    description: "Start sub-agents on nodes, each as its own Kandev task, so a branch can grow its own research team. Use it when a branch needs deep or parallel work you should not do yourself. Each agent needs a node and a concrete goal. Sub-agents share your run's budget: each one counts against max_subagents and their nodes count against max_nodes. Returns the new run ids; you do not need to wait for them."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":false,"destructive_hint":false,"idempotent_hint":false,"open_world_hint":true}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "agents": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "description": "One entry per sub-agent.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "node_id",
+                "goal"
+              ],
+              "properties": {
+                "node_id": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "Where the sub-agent works. Node id (nd_...) or an @ref you set earlier in this run."
+                },
+                "goal": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "description": "What it should achieve, concretely."
+                },
+                "template": {
+                  "type": "string",
+                  "enum": [
+                    "research",
+                    "explore",
+                    "swarm",
+                    "critique"
+                  ],
+                  "description": "Default research."
+                },
+                "lens": {
+                  "type": "string",
+                  "enum": [
+                    "researcher",
+                    "skeptic",
+                    "builder",
+                    "contrarian",
+                    "examples_hunter",
+                    "futurist"
+                  ],
+                  "description": "Persona, mainly for swarm."
+                },
+                "profile": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Agent profile name or id. Default: same as yours."
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "apply",
+                    "propose"
+                  ],
+                  "description": "Default: your mode."
+                },
+                "budget": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Caps for this sub-agent, within what you have left.",
+                  "properties": {
+                    "max_depth": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 10
+                    },
+                    "max_nodes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000
+                    },
+                    "max_subagents": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 20
+                    },
+                    "max_minutes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 240
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "agents"
+        ]
+      }
+  - name: ask_human
+    description: "Ask the humans a question without blocking. Creates a question node on the map, assigned to the people in the map. The answer arrives later as a chat message in this conversation. Keep working on other parts meanwhile; do not poll or wait. Use it for decisions only a human can make (priorities, preferences, access), not for facts you can look up."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":false,"destructive_hint":false,"idempotent_hint":false,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "One clear question."
+          },
+          "node_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Put the question under this node. Default: your run's node."
+          },
+          "options": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "description": "Suggested answers, if it is multiple choice."
+          },
+          "context": {
+            "type": "string",
+            "maxLength": 65536,
+            "description": "Markdown background the human needs to answer."
+          }
+        },
+        "required": [
+          "question"
+        ]
+      }
+  - name: write_doc
+    description: "Create or update a compiled document as a doc node. Use it in compile and synthesis runs: write one doc per branch, split into sub-docs (parent_doc_id) when a branch has about 8 or more children or more than about 1,500 words. Paths are relative markdown paths like index.md, pricing/index.md or pricing/tiers.md. Keep source citations as markdown links and link sibling docs by relative path. Pass doc_id to replace an existing doc."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":false,"destructive_hint":false,"idempotent_hint":false,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Existing doc node to replace. Omit to create."
+          },
+          "parent_doc_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Nest under this doc node. Default: under your run's node."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Doc title."
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Relative .md path, no leading slash or .."
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 65536,
+            "description": "Full markdown content."
+          },
+          "source_ids": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "Nodes this doc was compiled from."
+          },
+          "ref": {
+            "type": "string",
+            "maxLength": 48,
+            "description": "Label for this doc node, usable later as @ref."
+          }
+        },
+        "required": [
+          "title",
+          "path",
+          "body"
+        ]
+      }
+  - name: report
+    description: "Finish your run: write the final summary on your node and hand off. Call it once, last. Use status review when a human should check your work (always in propose mode, or when unsure) and done when nothing needs checking. The summary should say what you added or changed, what is still open, and anything you could not verify."
+    surfaces: [kanban-task, office-task]
+    annotations: {"read_only_hint":false,"destructive_hint":false,"idempotent_hint":false,"open_world_hint":false}
+    input_schema: {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "summary": {
+            "type": "string",
+            "maxLength": 8000,
+            "description": "Markdown summary of the run."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "review",
+              "done"
+            ],
+            "description": "Hand-off state."
+          },
+          "node_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Report on this node instead of your run's node."
+          },
+          "next_steps": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "description": "Suggested follow-ups, shown as quick actions."
+          }
+        },
+        "required": [
+          "summary",
+          "status"
+        ]
+      }
+# END generated agent_tools
 
 # All spike webhooks are authenticated (Kandev identity required).
 webhooks:

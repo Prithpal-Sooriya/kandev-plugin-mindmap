@@ -1,0 +1,30 @@
+[
+  {
+    "participant_id": "pt_guest0000001",
+    "cursor": {
+      "x": 120.5,
+      "y": -40
+    },
+    "selection": [
+      "nd_pricing000001",
+      "nd_example00001"
+    ],
+    "viewport": {
+      "x": -200,
+      "y": 50,
+      "w": 1440,
+      "h": 900
+    },
+    "editing": {
+      "node_id": "nd_pricing000001",
+      "field": "body_md",
+      "expires_at": "2026-10-01T12:30:00Z"
+    },
+    "updated_at": "2026-10-01T12:05:00Z"
+  },
+  {
+    "participant_id": "pt_agent0000001",
+    "focus_node_id": "nd_example00001",
+    "updated_at": "2026-10-01T12:05:00Z"
+  }
+]

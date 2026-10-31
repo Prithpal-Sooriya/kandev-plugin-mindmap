@@ -1,0 +1,20 @@
+[
+  {
+    "contract": 1,
+    "base_url": "http://127.0.0.1:52593",
+    "token": "mml1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "map_id": "map_demo00000001",
+    "expires_at": "2026-10-01T12:30:00Z",
+    "participant": {
+      "id": "pt_host00000001",
+      "map_id": "map_demo00000001",
+      "kind": "human",
+      "name": "Host",
+      "color": "#ef4444",
+      "is_host": true,
+      "online": true,
+      "joined_at": "2026-10-01T12:00:00Z",
+      "last_seen_at": "2026-10-01T12:30:00Z"
+    }
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "ev_added00000001",
+    "map_id": "map_demo00000001",
+    "type": "nodes.added",
+    "actor": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "summary": "Researcher (Claude) added 3 nodes under Pricing model",
+    "node_ids": [
+      "nd_example00001",
+      "nd_question0001",
+      "nd_doc0000000001"
+    ],
+    "count": 3,
+    "rev": 42,
+    "ts": "2026-10-01T12:05:00Z"
+  },
+  {
+    "id": "ev_joined0000001",
+    "map_id": "map_demo00000001",
+    "type": "participant.joined",
+    "actor": {
+      "participant_id": "pt_guest0000001"
+    },
+    "summary": "Guest A joined",
+    "ts": "2026-10-01T12:00:00Z"
+  }
+]

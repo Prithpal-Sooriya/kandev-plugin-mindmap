@@ -1,0 +1,161 @@
+[
+  {
+    "id": "nd_root00000001",
+    "map_id": "map_demo00000001",
+    "order": "V",
+    "title": "Launch a note-taking app",
+    "kind": "topic",
+    "status": "idle",
+    "author": {
+      "participant_id": "pt_host00000001"
+    },
+    "rev": 1,
+    "created_at": "2026-10-01T12:00:00Z",
+    "updated_at": "2026-10-01T12:00:00Z"
+  },
+  {
+    "id": "nd_pricing000001",
+    "map_id": "map_demo00000001",
+    "parent_id": "nd_root00000001",
+    "order": "V",
+    "title": "Pricing model",
+    "body_md": "Freemium vs usage-based.",
+    "kind": "idea",
+    "tags": [
+      "pricing",
+      "b2c"
+    ],
+    "confidence": 0.6,
+    "status": "running",
+    "run_id": "run_research0001",
+    "author": {
+      "participant_id": "pt_host00000001"
+    },
+    "collapsed": true,
+    "color": "#3b82f6",
+    "pending_proposal_id": "prp_garden000001",
+    "claim": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001",
+      "note": "Researching tiers",
+      "expires_at": "2026-10-01T12:30:00Z"
+    },
+    "rev": 40,
+    "created_at": "2026-10-01T12:00:00Z",
+    "updated_at": "2026-10-01T12:05:00Z"
+  },
+  {
+    "id": "nd_example00001",
+    "map_id": "map_demo00000001",
+    "parent_id": "nd_pricing000001",
+    "order": "V",
+    "title": "Example Co: free tier with 3 notebooks",
+    "kind": "example",
+    "confidence": 0.9,
+    "sources": [
+      {
+        "url": "https://example.com/pricing",
+        "title": "Example Co pricing",
+        "quote": "Free for up to 3 notebooks.",
+        "accessed_at": "2026-10-01T12:05:00Z"
+      }
+    ],
+    "assets": [
+      {
+        "id": "as_shot00000001",
+        "node_id": "nd_example00001",
+        "kind": "image",
+        "mime": "image/png",
+        "bytes": 48213,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "filename": "pricing-page.png",
+        "caption": "Pricing page of an example competitor",
+        "source_url": "https://example.com/pricing",
+        "width": 1280,
+        "height": 800,
+        "author": {
+          "participant_id": "pt_agent0000001",
+          "run_id": "run_research0001"
+        },
+        "created_at": "2026-10-01T12:05:00Z"
+      }
+    ],
+    "status": "idle",
+    "author": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "rev": 41,
+    "created_at": "2026-10-01T12:05:00Z",
+    "updated_at": "2026-10-01T12:05:00Z"
+  },
+  {
+    "id": "nd_question0001",
+    "map_id": "map_demo00000001",
+    "parent_id": "nd_pricing000001",
+    "order": "k",
+    "title": "Which segment do we target first?",
+    "body_md": "Students are price-sensitive; teams pay more.",
+    "kind": "question",
+    "status": "idle",
+    "author": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "question": {
+      "run_id": "run_research0001",
+      "options": [
+        "Students",
+        "Small teams"
+      ],
+      "answer": "Small teams",
+      "answered_by": "pt_guest0000001",
+      "answered_at": "2026-10-01T12:30:00Z"
+    },
+    "rev": 42,
+    "created_at": "2026-10-01T12:05:00Z",
+    "updated_at": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "nd_doc0000000001",
+    "map_id": "map_demo00000001",
+    "parent_id": "nd_pricing000001",
+    "order": "s",
+    "title": "Pricing",
+    "body_md": "# Pricing\n\nSee [tiers](tiers.md).",
+    "kind": "doc",
+    "status": "done",
+    "author": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "doc": {
+      "path": "pricing/index.md",
+      "source_ids": [
+        "nd_example00001",
+        "nd_question0001"
+      ],
+      "run_id": "run_research0001",
+      "compiled_at": "2026-10-01T12:30:00Z"
+    },
+    "rev": 42,
+    "created_at": "2026-10-01T12:30:00Z",
+    "updated_at": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "nd_risk00000001",
+    "map_id": "map_demo00000001",
+    "parent_id": "nd_root00000001",
+    "order": "k",
+    "title": "Retired idea",
+    "kind": "risk",
+    "status": "idle",
+    "author": {
+      "participant_id": "pt_host00000001"
+    },
+    "deleted": true,
+    "rev": 39,
+    "created_at": "2026-10-01T12:00:00Z",
+    "updated_at": "2026-10-01T12:05:00Z"
+  }
+]

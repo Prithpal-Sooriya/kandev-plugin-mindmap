@@ -18,24 +18,19 @@ func newTestPlugin(t *testing.T) *mindmapPlugin {
 	return newPlugin()
 }
 
-func TestMindmapPingLogsAndPongs(t *testing.T) {
+func TestAgentToolsRouteToStubDispatcher(t *testing.T) {
 	p := newTestPlugin(t)
 	res, err := p.InvokeAgentTool(context.Background(), &pluginsdk.AgentToolRequest{
-		Name:      "mindmap_ping",
-		Arguments: map[string]any{"msg": "hello", "blob": strings.Repeat("x", 500)},
+		Name:      "context",
+		Arguments: map[string]any{},
 		Context:   pluginsdk.AgentToolContext{TaskID: "t1", SessionID: "s1", Surface: "kanban-task"},
 	})
-	if err != nil || res.Text != "pong" || res.IsError {
+	if err != nil || !res.IsError || !strings.HasPrefix(res.Text, "error not_implemented:") {
 		t.Fatalf("unexpected result %+v err=%v", res, err)
 	}
-	b, err := os.ReadFile(filepath.Join(p.dataDir, "ping.log"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{`"task_id":"t1"`, `"session_id":"s1"`, `"msg":"hello"`, `string len=500`} {
-		if !strings.Contains(string(b), want) {
-			t.Errorf("log missing %s: %s", want, b)
-		}
+	res, _ = p.InvokeAgentTool(context.Background(), &pluginsdk.AgentToolRequest{Name: "add", Arguments: map[string]any{}})
+	if !res.IsError || !strings.Contains(res.Text, "bad_request") {
+		t.Fatalf("missing args should be bad_request, got %+v", res)
 	}
 }
 

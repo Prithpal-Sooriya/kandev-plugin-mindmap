@@ -1,0 +1,43 @@
+{
+  "name": "ask_human",
+  "description": "Ask the humans a question without blocking. Creates a question node on the map, assigned to the people in the map. The answer arrives later as a chat message in this conversation. Keep working on other parts meanwhile; do not poll or wait. Use it for decisions only a human can make (priorities, preferences, access), not for facts you can look up.",
+  "annotations": {
+    "read_only_hint": false,
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "question": {
+        "type": "string",
+        "maxLength": 2000,
+        "description": "One clear question."
+      },
+      "node_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Put the question under this node. Default: your run's node."
+      },
+      "options": {
+        "type": "array",
+        "maxItems": 6,
+        "items": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "description": "Suggested answers, if it is multiple choice."
+      },
+      "context": {
+        "type": "string",
+        "maxLength": 65536,
+        "description": "Markdown background the human needs to answer."
+      }
+    },
+    "required": [
+      "question"
+    ]
+  }
+}

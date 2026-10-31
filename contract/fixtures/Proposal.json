@@ -1,0 +1,139 @@
+[
+  {
+    "id": "prp_garden000001",
+    "map_id": "map_demo00000001",
+    "run_id": "run_research0001",
+    "base_rev": 40,
+    "status": "partial",
+    "summary": "Merge duplicates and add a doc.",
+    "items": [
+      {
+        "op": {
+          "id": "op_merge00000001",
+          "map_id": "map_demo00000001",
+          "rev": 0,
+          "type": "node.merge",
+          "payload": {
+            "into_id": "nd_pricing000001",
+            "ids": [
+              "nd_risk00000001"
+            ]
+          },
+          "actor": {
+            "participant_id": "pt_agent0000001",
+            "run_id": "run_research0001"
+          },
+          "proposal_id": "prp_garden000001"
+        },
+        "status": "accepted",
+        "node_ids": [
+          "nd_pricing000001",
+          "nd_risk00000001"
+        ]
+      },
+      {
+        "op": {
+          "id": "op_createdoc00001",
+          "map_id": "map_demo00000001",
+          "rev": 0,
+          "type": "node.create",
+          "payload": {
+            "node": {
+              "id": "nd_doc0000000001",
+              "parent_id": "nd_pricing000001",
+              "order": "s",
+              "title": "Pricing",
+              "kind": "doc",
+              "doc": {
+                "path": "pricing/index.md"
+              }
+            }
+          },
+          "actor": {
+            "participant_id": "pt_agent0000001",
+            "run_id": "run_research0001"
+          },
+          "proposal_id": "prp_garden000001"
+        },
+        "status": "conflict",
+        "node_ids": [
+          "nd_doc0000000001",
+          "nd_pricing000001"
+        ],
+        "error": {
+          "code": "conflict",
+          "message": "parent was deleted",
+          "field": "node.parent_id"
+        }
+      },
+      {
+        "op": {
+          "id": "op_merge00000002",
+          "map_id": "map_demo00000001",
+          "rev": 0,
+          "type": "node.merge",
+          "payload": {
+            "into_id": "nd_pricing000001",
+            "ids": [
+              "nd_risk00000001"
+            ]
+          },
+          "actor": {
+            "participant_id": "pt_agent0000001",
+            "run_id": "run_research0001"
+          },
+          "proposal_id": "prp_garden000001"
+        },
+        "status": "rejected",
+        "node_ids": [
+          "nd_pricing000001",
+          "nd_risk00000001"
+        ]
+      },
+      {
+        "op": {
+          "id": "op_merge00000003",
+          "map_id": "map_demo00000001",
+          "rev": 0,
+          "type": "node.merge",
+          "payload": {
+            "into_id": "nd_pricing000001",
+            "ids": [
+              "nd_risk00000001"
+            ]
+          },
+          "actor": {
+            "participant_id": "pt_agent0000001",
+            "run_id": "run_research0001"
+          },
+          "proposal_id": "prp_garden000001"
+        },
+        "status": "pending",
+        "node_ids": [
+          "nd_pricing000001",
+          "nd_risk00000001"
+        ]
+      }
+    ],
+    "author": {
+      "participant_id": "pt_agent0000001",
+      "run_id": "run_research0001"
+    },
+    "resolved_by": "pt_host00000001",
+    "created_at": "2026-10-01T12:05:00Z",
+    "resolved_at": "2026-10-01T12:30:00Z"
+  },
+  {
+    "id": "prp_open00000001",
+    "map_id": "map_demo00000001",
+    "run_id": "run_skeptic00001",
+    "base_rev": 42,
+    "status": "open",
+    "items": [],
+    "author": {
+      "participant_id": "pt_agent0000002",
+      "run_id": "run_skeptic00001"
+    },
+    "created_at": "2026-10-01T12:05:00Z"
+  }
+]

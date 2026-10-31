@@ -3,21 +3,24 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/kandev/kandev/pkg/pluginsdk"
+
+	"kandev-plugin-mindmap/server/contract"
+	"kandev-plugin-mindmap/server/tools"
 )
 
-// mindmapPlugin is the Phase 0 spike plugin: one agent tool, a handful of
+// mindmapPlugin is the Phase 0 spike plugin plus the stubbed contract tools: a handful of
 // authenticated debug webhooks, and a loopback HTTP+WS probe server.
 type mindmapPlugin struct {
 	pluginsdk.UnimplementedPlugin
 
 	dataDir string
+	tools   *tools.Dispatcher
 
 	logMu sync.Mutex
 
@@ -37,7 +40,7 @@ func newPlugin() *mindmapPlugin {
 		dir = filepath.Join(os.TempDir(), "kandev-plugin-mindmap")
 	}
 	_ = os.MkdirAll(dir, 0o755)
-	return &mindmapPlugin{dataDir: dir}
+	return &mindmapPlugin{dataDir: dir, tools: tools.NewStub()}
 }
 
 // appendLog writes one JSON line to <data dir>/<name>.log.
@@ -58,30 +61,17 @@ func (p *mindmapPlugin) appendLog(name string, entry map[string]any) error {
 	return err
 }
 
-// InvokeAgentTool implements pluginsdk.AgentToolPlugin. Spike check 1: record
-// the call context and arguments, return "pong".
-func (p *mindmapPlugin) InvokeAgentTool(_ context.Context, req *pluginsdk.AgentToolRequest) (*pluginsdk.AgentToolResult, error) {
-	args := map[string]any{}
-	for k, v := range req.Arguments {
-		if s, ok := v.(string); ok && len(s) > 200 {
-			args[k] = fmt.Sprintf("<string len=%d>", len(s))
-			continue
-		}
-		args[k] = v
-	}
-	entry := map[string]any{
-		"invocation_id": req.InvocationID,
-		"tool":          req.Name,
-		"task_id":       req.Context.TaskID,
-		"session_id":    req.Context.SessionID,
-		"workspace_id":  req.Context.WorkspaceID,
-		"surface":       req.Context.Surface,
-		"args":          args,
-	}
-	if err := p.appendLog("ping", entry); err != nil {
-		return &pluginsdk.AgentToolResult{Text: "log error: " + err.Error(), IsError: true}, nil
-	}
-	return &pluginsdk.AgentToolResult{Text: "pong"}, nil
+// InvokeAgentTool implements pluginsdk.AgentToolPlugin by routing the call to
+// the shared tool dispatcher (stubbed until Phase 1a).
+func (p *mindmapPlugin) InvokeAgentTool(ctx context.Context, req *pluginsdk.AgentToolRequest) (*pluginsdk.AgentToolResult, error) {
+	res := p.tools.InvokeMap(ctx, tools.Caller{
+		Transport:    contract.TransportMCP,
+		InvocationID: req.InvocationID,
+		TaskID:       req.Context.TaskID,
+		SessionID:    req.Context.SessionID,
+		WorkspaceID:  req.Context.WorkspaceID,
+	}, req.Name, req.Arguments)
+	return &pluginsdk.AgentToolResult{Text: res.Text, StructuredContent: res.Structured, IsError: res.IsError}, nil
 }
 
 // OnEvent records every delivered event (spike check 7).

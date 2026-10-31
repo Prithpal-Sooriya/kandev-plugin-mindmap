@@ -1,0 +1,23 @@
+{
+  "valid": [
+    {
+      "from_id": "nd_example00001",
+      "to_id": "nd_question0001",
+      "label": "supports",
+      "reason": "why"
+    }
+  ],
+  "invalid": [
+    {
+      "from_id": "nd_example00001",
+      "to_id": "nd_question0001"
+    }
+  ],
+  "semantic": [
+    {
+      "from_id": "nd_example00001",
+      "to_id": "nd_example00001",
+      "label": "x"
+    }
+  ]
+}

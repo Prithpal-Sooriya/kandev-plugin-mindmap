@@ -1,0 +1,47 @@
+{
+  "name": "read",
+  "description": "Read part of the map as an indented, id-tagged outline: one line per node with [id], kind, status, source count and confidence. Use it to see a branch before adding to it or reorganising it. Defaults to the whole map from the root, 3 levels deep, without bodies. Large results are paged: pass next_cursor back as cursor. Read-only.",
+  "annotations": {
+    "read_only_hint": true,
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "node_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Start here instead of the root. Node id (nd_...) or an @ref you set earlier in this run."
+      },
+      "depth": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10,
+        "description": "Levels below the start node. Default 3."
+      },
+      "include_bodies": {
+        "type": "boolean",
+        "description": "Include markdown bodies and sources. Default false; turn on only for small branches."
+      },
+      "cursor": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "next_cursor from a previous read, to get the next page."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 500,
+        "description": "Max nodes per page. Default 200."
+      },
+      "map_id": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Read another map in the same workspace (read-only). Omit for your own map."
+      }
+    }
+  }
+}

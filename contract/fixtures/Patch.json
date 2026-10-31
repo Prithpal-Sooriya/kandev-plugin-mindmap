@@ -1,0 +1,46 @@
+[
+  {
+    "v": 1,
+    "calls": [
+      {
+        "tool": "add",
+        "args": {
+          "parent_id": "nd_pricing000001",
+          "nodes": [
+            {
+              "ref": "tiers",
+              "title": "Three tiers",
+              "kind": "idea",
+              "children": [
+                {
+                  "title": "Example Co free tier",
+                  "kind": "example",
+                  "sources": [
+                    {
+                      "url": "https://example.com/pricing"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "tool": "link",
+        "args": {
+          "from_id": "@tiers",
+          "to_id": "nd_question0001",
+          "label": "depends on"
+        }
+      },
+      {
+        "tool": "report",
+        "args": {
+          "summary": "Added a tiers branch.",
+          "status": "review"
+        }
+      }
+    ]
+  }
+]

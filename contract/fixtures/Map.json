@@ -1,0 +1,41 @@
+[
+  {
+    "id": "map_demo00000001",
+    "workspace_id": "ws-1",
+    "title": "Launch a note-taking app",
+    "root_id": "nd_root00000001",
+    "repo_id": "repo-1",
+    "settings": {
+      "default_mode": "apply",
+      "default_profile_id": "profile-claude",
+      "default_budget": {
+        "max_depth": 3,
+        "max_nodes": 40,
+        "max_subagents": 4,
+        "max_minutes": 60
+      },
+      "max_concurrent_runs": 4,
+      "export_dir": "~/Kandev/mindmaps",
+      "require_guest_run_approval": true
+    },
+    "rev": 42,
+    "forked_from": {
+      "map_id": "map_original00001",
+      "rev": 30
+    },
+    "created_by": "pt_host00000001",
+    "created_at": "2026-10-01T12:00:00Z",
+    "updated_at": "2026-10-01T12:05:00Z"
+  },
+  {
+    "id": "map_empty0000001",
+    "workspace_id": "ws-1",
+    "title": "Empty",
+    "root_id": "nd_root00000002",
+    "settings": {},
+    "rev": 1,
+    "created_by": "pt_host00000001",
+    "created_at": "2026-10-01T12:00:00Z",
+    "updated_at": "2026-10-01T12:00:00Z"
+  }
+]

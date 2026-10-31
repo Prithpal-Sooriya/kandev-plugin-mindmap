@@ -1,0 +1,16 @@
+[
+  {
+    "accept": [
+      "op_merge00000001"
+    ],
+    "reject": [
+      "op_createdoc00001"
+    ]
+  },
+  {
+    "accept_all": true
+  },
+  {
+    "reject_all": true
+  }
+]
