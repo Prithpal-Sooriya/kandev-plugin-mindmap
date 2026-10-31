@@ -11,6 +11,7 @@ import (
 
 	contractfiles "kandev-plugin-mindmap/contract"
 	"kandev-plugin-mindmap/server/contract"
+	"kandev-plugin-mindmap/server/share"
 	"kandev-plugin-mindmap/server/store"
 	"kandev-plugin-mindmap/server/tools"
 )
@@ -54,7 +55,7 @@ func (s *Server) snapshot(w http.ResponseWriter, r *http.Request, _ *principal) 
 
 func (s *Server) syncRoute(w http.ResponseWriter, r *http.Request, p *principal) {
 	mapID := r.PathValue("map")
-	pt, err := s.participant(p, mapID)
+	pt, err := s.participant(p, r, mapID)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -74,8 +75,12 @@ func (s *Server) submitRoute(w http.ResponseWriter, r *http.Request, p *principa
 		writeErr(w, err)
 		return
 	}
-	pt, err := s.participant(p, mapID)
+	pt, err := s.participant(p, r, mapID)
 	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := s.limits.AllowN(share.LimitOps, s.limitKey(r, p), len(req.Ops)); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -92,7 +97,7 @@ func (s *Server) submitRoute(w http.ResponseWriter, r *http.Request, p *principa
 // (including the caller) as a normal `ops` message and returned here.
 func (s *Server) undo(w http.ResponseWriter, r *http.Request, p *principal) {
 	mapID := r.PathValue("map")
-	pt, err := s.participant(p, mapID)
+	pt, err := s.participant(p, r, mapID)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -124,8 +129,21 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, p *principal) 
 		writeErr(w, err)
 		return
 	}
-	pt, err := s.participant(p, mapID)
+	pt, err := s.participant(p, r, mapID)
 	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if hold, err := s.svc.GuestRunNeedsApproval(mapID, pt.ID); err != nil {
+		writeErr(w, err)
+		return
+	} else if hold {
+		// Phase 2a queues the run (waiting_reason=approval) instead of refusing.
+		// Until that hold exists, a guest run does not start.
+		writeErr(w, contract.Errf(contract.ErrForbidden, "the host must approve guest runs on this map"))
+		return
+	}
+	if err := s.limits.Allow(share.LimitRuns, s.limitKey(r, p)); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -149,6 +167,10 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, p *principal) 
 
 func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request, p *principal) {
 	mapID := r.PathValue("map")
+	if err := s.limits.Allow(share.LimitAssets, s.limitKey(r, p)); err != nil {
+		writeErr(w, err)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, contract.MaxAssetBytes+1<<20)
 	if err := r.ParseMultipartForm(1 << 20); err != nil {
 		writeErr(w, contract.Errf(contract.ErrTooLarge, "multipart body: %v", err))
@@ -180,7 +202,7 @@ func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request, p *principa
 		writeErr(w, err)
 		return
 	}
-	pt, err := s.participant(p, mapID)
+	pt, err := s.participant(p, r, mapID)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -226,7 +248,7 @@ func (s *Server) review(w http.ResponseWriter, r *http.Request, p *principal) {
 		writeErr(w, err)
 		return
 	}
-	pt, err := s.participant(p, prop.MapID)
+	pt, err := s.participant(p, r, prop.MapID)
 	if err != nil {
 		writeErr(w, err)
 		return

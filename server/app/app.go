@@ -74,7 +74,9 @@ type Service struct {
 	Hub       *hub.Hub
 	Launcher  Launcher
 	Messenger Messenger
-	Logf      func(format string, args ...any)
+	// Stops is the Phase 2a hook for the kill switch. See StopAllRuns.
+	Stops StopAllRuns
+	Logf  func(format string, args ...any)
 
 	// submitMu orders commit+broadcast so every client sees ops in rev
 	// order and before its own ack.

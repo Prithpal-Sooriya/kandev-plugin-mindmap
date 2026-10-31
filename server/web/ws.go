@@ -11,6 +11,7 @@ import (
 	"kandev-plugin-mindmap/server/app"
 	"kandev-plugin-mindmap/server/contract"
 	"kandev-plugin-mindmap/server/hub"
+	"kandev-plugin-mindmap/server/share"
 	"kandev-plugin-mindmap/server/store"
 )
 
@@ -64,7 +65,13 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, p *principal) 
 		return
 	}
 	conn.SetReadLimit(maxFrame)
-	go s.serveConn(conn, p, mapID)
+	var fromCookie *contract.Participant
+	if p.kind == contract.TokenShare {
+		if pt, ok := s.guestParticipant(r, p.token); ok {
+			fromCookie = &pt
+		}
+	}
+	go s.serveConn(conn, p, mapID, fromCookie, s.limitKey(r, p))
 }
 
 func writeFrame(conn *websocket.Conn, m contract.Message) error {
@@ -95,15 +102,15 @@ func readMsg(conn *websocket.Conn) (contract.Message, error) {
 }
 
 // helloParticipant picks who a connection acts as: the host for local
-// tokens; for share tokens a resumed or new guest participant.
-func (s *Server) helloParticipant(p *principal, mapID string, h *contract.HelloPayload) (contract.Participant, error) {
+// tokens; for share tokens the mm_guest cookie, or a new guest. A
+// client-supplied participant_id is not resumed: those ids are broadcast
+// with every op, so trusting them would let one guest impersonate another.
+func (s *Server) helloParticipant(p *principal, mapID string, h *contract.HelloPayload, fromCookie *contract.Participant) (contract.Participant, error) {
 	if p.kind == contract.TokenLocal {
 		return s.svc.Store.HostParticipant(mapID)
 	}
-	if h.ParticipantID != "" {
-		if pt, err := s.svc.Store.GetParticipant(h.ParticipantID); err == nil && pt.MapID == mapID && pt.Kind == contract.ParticipantHuman && !pt.IsHost {
-			return pt, nil
-		}
+	if fromCookie != nil && fromCookie.MapID == mapID && !fromCookie.IsHost {
+		return *fromCookie, nil
 	}
 	pt, err := s.svc.Store.CreateGuest(mapID, h.Name, h.Color)
 	if err == nil {
@@ -113,7 +120,7 @@ func (s *Server) helloParticipant(p *principal, mapID string, h *contract.HelloP
 	return pt, err
 }
 
-func (s *Server) serveConn(conn *websocket.Conn, p *principal, mapID string) {
+func (s *Server) serveConn(conn *websocket.Conn, p *principal, mapID string, fromCookie *contract.Participant, limitKey string) {
 	defer conn.Close()
 	_ = conn.SetReadDeadline(time.Now().Add(helloTimeout))
 	first, err := readMsg(conn)
@@ -130,7 +137,7 @@ func (s *Server) serveConn(conn *websocket.Conn, p *principal, mapID string) {
 		fatal(conn, contract.Errf(contract.ErrVersion, "server speaks contract %d", contract.ContractVersion))
 		return
 	}
-	pt, err := s.helloParticipant(p, mapID, hello)
+	pt, err := s.helloParticipant(p, mapID, hello, fromCookie)
 	if err != nil {
 		fatal(conn, contract.AsError(err))
 		return
@@ -166,6 +173,12 @@ func (s *Server) serveConn(conn *websocket.Conn, p *principal, mapID string) {
 		}
 		switch pl := m.Payload.(type) {
 		case *contract.SubmitPayload:
+			if s.limits != nil {
+				if err := s.limits.AllowN(share.LimitOps, limitKey, len(pl.Ops)); err != nil {
+					c.Send(contract.Message{Type: contract.MsgError, Payload: &contract.ErrorPayload{Error: *contract.AsError(err)}})
+					continue
+				}
+			}
 			res, err := s.svc.Submit(mapID, pl.Ops, app.SubmitOptions{Actor: actor, OriginConn: c.ConnID, OriginClient: c.ClientID})
 			for _, out := range SubmitOutcome(pl.Ops, res, err) {
 				c.Send(out)

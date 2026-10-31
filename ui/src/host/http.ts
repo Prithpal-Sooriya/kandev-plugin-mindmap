@@ -1,8 +1,8 @@
 // Shared HTTP helpers for both hosts: JSON calls with contract errors, and the
 // MapApi built on top of a `/api/*` caller.
 import {
-  CONTRACT_HEADER, CONTRACT_VERSION, ContractError, type AgentProfile, type ErrorCode, type MapSummary, type MindMap,
-  type Op, type Proposal, type Run,
+  CONTRACT_HEADER, CONTRACT_VERSION, ContractError, type ActivityEvent, type AgentProfile, type ErrorCode, type MapSummary, type MindMap,
+  type Op, type Proposal, type Run, type ShareLink,
 } from "../contract";
 import type { MapApi } from "./adapter";
 
@@ -45,6 +45,12 @@ export function mapApi(call: ApiCall): MapApi {
     undo: (mapId) => call<{ ops: Op[]; rev: number }>("POST", `/maps/${encodeURIComponent(mapId)}/undo`, {}),
     getOps: (mapId, from, to) => call<{ ops: Op[] }>("GET", `/maps/${encodeURIComponent(mapId)}/ops?from=${from}&to=${to}`),
     forkMap: (mapId, rev) => call<MindMap>("POST", `/maps/${encodeURIComponent(mapId)}/fork`, { rev }),
+    shareStatus: (mapId) => call<ShareLink>("GET", `/maps/${encodeURIComponent(mapId)}/share`),
+    startShare: (mapId) => call<ShareLink>("POST", `/maps/${encodeURIComponent(mapId)}/share`, {}),
+    rotateShare: (mapId) => call<ShareLink>("POST", `/maps/${encodeURIComponent(mapId)}/share/rotate`, {}),
+    stopShare: (mapId) => call<void>("DELETE", `/maps/${encodeURIComponent(mapId)}/share`),
+    killSharing: () => call<void>("POST", "/kill", {}),
+    audit: (mapId) => call<ActivityEvent[]>("GET", `/maps/${encodeURIComponent(mapId)}/audit`),
   };
 }
 

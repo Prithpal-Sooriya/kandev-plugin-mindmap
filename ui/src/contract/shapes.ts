@@ -277,6 +277,17 @@ export const MessageRunRequestShape = obj("MessageRunRequest", { text: str() });
 export const AgentProfileShape = obj("AgentProfile", { id: str(), name: str(), harness: oneOf(HARNESSES) });
 export type AgentProfile = Infer<typeof AgentProfileShape>;
 
+export const ShareSettingsShape = obj("ShareSettings", {}, {
+  provider: oneOf(SHARE_PROVIDERS),
+  max_concurrent_runs: int,
+  max_nodes: int,
+  max_depth: int,
+  max_subagents: int,
+  max_minutes: int,
+  require_guest_run_approval: bool,
+});
+export type ShareSettings = Infer<typeof ShareSettingsShape>;
+
 export const ShareLinkShape = obj("ShareLink", {
   id, map_id: id, provider: oneOf(SHARE_PROVIDERS), status: oneOf(SHARE_STATUSES), created_at: time,
 }, { url: str(), error: str(), install_hint: str(), stopped_at: time });
@@ -329,5 +340,6 @@ export const FIXTURE_SHAPES: Record<string, Shape<unknown>> = {
   MessageRunRequest: MessageRunRequestShape,
   AgentProfile: AgentProfileShape,
   ShareLink: ShareLinkShape,
+  ShareSettings: ShareSettingsShape,
   Patch: PatchShape,
 };

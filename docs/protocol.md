@@ -76,13 +76,21 @@ Rules:
 - **Share scope:** a share token reaches only its map, the asset bytes of that map, the agent-profile list, and the
   run/swarm/compile endpoints for that map. It never reaches other maps, Kandev's UI or API, or tasks outside the map.
   Every agent action goes through the backend under the host's Kandev identity.
-- **Guest identity:** on the first `hello` through a share token, the server creates a `human` participant from
-  `name` and `color` and sets the `mm_guest` cookie (`HttpOnly; Secure; SameSite=Strict; Path=/m/<share token>/`).
-  Later `hello`s resume that participant. Rotating the share token invalidates every guest token for the map.
-- **Rate limits:** per guest or local session, 50 ops/s sustained (burst 200), 10 run starts per minute, and 20
-  asset uploads per minute. Over the limit you get `rate_limited` with `retry_ms`.
-- **Kill switch** (host only): it revokes every share, guest and run token, stops every tunnel, and asks every active
-  run to stop (see §9).
+- **Guest identity:** `POST /m/<share token>/api/join` with `{name, color}` creates a `human` participant and sets
+  the `mm_guest` cookie (`HttpOnly; SameSite=Lax; Path=/m/<share token>/`; `Secure` when the request came through
+  the tunnel or TLS). Later requests and `hello` frames resume that participant from the cookie. A `participant_id`
+  on `hello` is not a session: those ids are broadcast with every op, so trusting one would let a guest impersonate
+  another. A WebSocket with no cookie mints a new guest. Rotating or stopping the share token invalidates every
+  guest token for that link. The cookie's idle lifetime is 30 days.
+- **Rate limits:** per guest or local session, 20 API calls/s (burst 60), 50 ops/s inside submit (burst 200),
+  10 run starts per minute, and 20 asset uploads per minute. Over the limit you get `rate_limited` with `retry_ms`.
+  The internal `api` webhook principal is not limited. A bad token still 404s; it is not turned into a 429.
+- **Kill switch** (host only, `POST /m/<t>/api/kill`): it revokes every share and guest token, stops the tunnel,
+  and asks every active run to stop (see §9). Stopping runs goes through `app.Service.StopAllRuns`, which calls
+  the `app.StopAllRuns` hook Phase 2a implements (`Service.Stops`) and then marks non-terminal runs `stopped`.
+- **Share secrets.** The `tokens` table stores only a sha256. So the host can show the same URL again after a
+  quick tunnel gets a new hostname, the raw share secret is also kept in `share-secrets.json` (mode `0600`) in the
+  plugin data directory. That file is not served. Guest, local, run and personal tokens are not written there.
 
 ### Run token lifecycle
 
@@ -157,10 +165,25 @@ contract types. Errors return `{"error": Error}` with the HTTP status from `Erro
 | `GET /m/<t>/api/profiles` | `AgentProfile[]` via `AgentProfiles().List` |
 | `POST /m/<t>/api/maps/<map>/fork` | `{rev?}` → `Map` (fork at rev, default head) |
 | `GET /m/<t>/api/maps/<map>/export.zip` | compiled docs as a zip |
-| `POST /m/<t>/api/maps/<map>/share` | host only: start sharing → `ShareLink` |
-| `POST /m/<t>/api/maps/<map>/share/rotate` | host only → `ShareLink` |
-| `DELETE /m/<t>/api/maps/<map>/share` | host only: stop sharing |
-| `POST /m/<t>/api/kill` | host only: kill switch |
+| `POST /m/<t>/api/maps/<map>/share` | host only: start the tunnel if needed, mint a 256-bit share token, return `ShareLink` whose `url` is `https://<host>/m/<mms token>/` |
+| `POST /m/<t>/api/maps/<map>/share/rotate` | host only: invalidate the current link and mint another. The tunnel stays up |
+| `DELETE /m/<t>/api/maps/<map>/share` | host only: stop sharing this map. `204`. The tunnel stops when no map is shared |
+| `GET /m/<t>/api/maps/<map>/share` | host only: current `ShareLink`, or `404` when the map is not shared |
+| `POST /m/<t>/api/join` | share token only: `{name, color}` → `Participant`, and sets `mm_guest` |
+| `GET /m/<t>/api/maps/<map>/audit` | `ActivityEvent[]` of who started or spawned a run (`run.started`, `run.spawned`) |
+| `GET /m/<t>/api/settings/share` | host only: plugin-wide `ShareSettings` |
+| `PUT /m/<t>/api/settings/share` | host only: replace `ShareSettings` |
+| `POST /m/<t>/api/kill` | host only: kill switch. `204` |
+
+`ShareSettings.provider` is `cloudflared` (default), `tailscale` or `ngrok`. A zero cap means no plugin-level limit.
+Per-map `MapSettings` still apply and the tighter of the two wins. `require_guest_run_approval` is off by default.
+When it is on, a guest `POST .../runs` returns `403 forbidden` until Phase 2a queues the run with
+`waiting_reason=approval`. The host and agent participants are never held. Run launch calls
+`Service.CheckRunCaps` before creating a run; a swarm that does not go through `StartRun` must call it too.
+`Service.GuestRunNeedsApproval` (and `share.GuestRunNeedsApproval`) is the approval check.
+
+A missing tunnel binary is `not_installed` (HTTP 503). The message includes the install command, for example
+`brew install cloudflared`. Host-only routes answer `403` to a valid share token. Token problems stay an empty `404`.
 | `GET /agent/v1/tools` | bridge: `ToolListResponse` (run or personal token) |
 | `POST /agent/v1/tools/<name>` | bridge: body = tool arguments, response = `ToolResult` (§8.3) |
 
@@ -176,7 +199,7 @@ guests. Each frame is one JSON object, `{"type": <MsgType>, "payload": {...}}` (
 
 | type | payload | notes |
 |---|---|---|
-| `hello` | `HelloPayload` | must be first. `contract: 1`. `since_rev` asks for catch-up instead of a snapshot |
+| `hello` | `HelloPayload` | must be first. `contract: 1`. `since_rev` asks for catch-up instead of a snapshot. `participant_id` is ignored; the `mm_guest` cookie is the session |
 | `submit` | `{ops: Op[]}` | at most 200 ops, applied atomically in order as one batch |
 | `presence.update` | `{presence: Presence}` | at most 20/s; the server coalesces and rebroadcasts at most every 50 ms |
 | `output.subscribe` | `{run_id}` | start streaming `output` for a run (the inspector is open) |
@@ -439,6 +462,7 @@ Example reply:
 | `rate_limited` | 429 | slow down; see `retry_ms` |
 | `not_implemented` | 501 | not built yet (the stub dispatcher returns this for every tool) |
 | `fetch_failed` | 502 | the attach URL or file could not be read |
+| `not_installed` | 503 | the chosen tunnel binary is not on PATH or in the usual Homebrew locations. `message` includes the install command |
 | `unavailable` | 503 | the Host API or tunnel is unavailable; retry |
 | `internal` | 500 | bug |
 
@@ -463,9 +487,10 @@ against these.
 
 - The manifest also subscribes to `message.updated`, so `mindmap-patch` blocks in agent messages that stream in
   through updates are still executed (each block once, keyed by `(message_id, block index)`).
-- Routes from §4 that later phases build (swarms, compile, suggest, run stop/message/approve, share, kill,
-  export.zip) answer `501 not_implemented`. `POST .../runs` works, but runs stay `queued` with no `task_id`
-  until Phase 2a plugs a Host-backed launcher into `app.Launcher`.
+- Routes from §4 that later phases build (swarms, compile, suggest, run stop/message/approve, export.zip) answer
+  `501 not_implemented`. Share, rotate, stop, status, join, audit, share settings and the kill switch are live.
+  `POST .../runs` works, but runs stay `queued` with no `task_id` until Phase 2a plugs a Host-backed launcher
+  into `app.Launcher`. While `require_guest_run_approval` is on, a guest start is `403` rather than queued.
 
 **Clarifications for clients**
 
@@ -488,8 +513,12 @@ against these.
 - **Undo limits.** `node.merge`, `question.answer` and `link.delete` cannot be undone (`conflict`). The inverse of
   an update does not remove sources added by `add_sources`, because `NodeFields` cannot set sources. Restoring a
   node also restores tombstoned descendants that were deleted earlier.
-- **Guests (until Phase 2d).** Each `hello` through a share token creates a new guest participant unless it resumes
-  `participant_id`. The `mm_guest` cookie is not issued yet.
+- **Guests.** Join with `POST .../api/join` before connecting. The `mm_guest` cookie (HttpOnly, SameSite=Lax,
+  Secure on the tunnel) is the session. `hello.participant_id` is not resumed. A tunnel-looking request
+  (`Cf-Connecting-Ip`, `X-Forwarded-For`, a `Tailscale-*` header, or a non-loopback `Host`) is allowed only for
+  a share token, and only for that token's map. Local tokens, `/agent/v1` and every other path 404. The server
+  never proxies those requests to Kandev. Asset uploads are limited to `AllowedAssetMIME` and 10 MiB, and they
+  share the per-session upload rate limit.
 - **`attach.file_path`.** Kandev does not tell plugins a task's worktree path (`pluginsdk.Task` and `Session` have
   no such field), so the backend accepts absolute paths under `$KANDEV_HOME/tasks` (default `~/.kandev/tasks`,
   where Kandev puts task worktrees) or the temp dirs, after resolving symlinks. Override with

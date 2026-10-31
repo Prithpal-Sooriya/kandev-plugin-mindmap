@@ -2,8 +2,8 @@
 //   ui/src/kandev/adapter.ts      in-Kandev bundle (host React, webhooks, loopback WS)
 //   ui/src/standalone/adapter.ts  guest web app (own React, /m/<token>/ paths)
 import type {
-  AgentProfile, CreateMapRequestShape, Infer, MapSummary, MindMap, Op, OutputLine, Participant, Proposal,
-  ReviewProposalRequest, Run, StartRunRequest,
+  ActivityEvent, AgentProfile, CreateMapRequestShape, Infer, MapSummary, MindMap, Op, OutputLine, Participant, Proposal,
+  ReviewProposalRequest, Run, ShareLink, StartRunRequest,
 } from "../contract";
 import type { MapEndpoints, WsFactory } from "../transport/connection";
 
@@ -23,6 +23,12 @@ export interface MapApi {
   undo(mapId: string): Promise<{ ops: Op[]; rev: number }>;
   getOps?(mapId: string, from: number, to: number): Promise<{ ops: Op[] }>;
   forkMap?(mapId: string, rev: number): Promise<MindMap>;
+  shareStatus(mapId: string): Promise<ShareLink>;
+  startShare(mapId: string): Promise<ShareLink>;
+  rotateShare(mapId: string): Promise<ShareLink>;
+  stopShare(mapId: string): Promise<void>;
+  killSharing(): Promise<void>;
+  audit(mapId: string): Promise<ActivityEvent[]>;
 }
 
 export interface HostAdapter {
@@ -43,6 +49,11 @@ export interface HostAdapter {
   canListMaps: boolean;
   /** Guest identity, if the host needs the user to pick one before connecting. */
   guestIdentity?(): { name: string; color: string } | null;
+  /**
+   * Bind a display name to the share cookie. The cookie, not the returned id,
+   * is what later requests are attributed to.
+   */
+  joinGuest?(guest: { name: string; color: string }): Promise<Participant>;
   api: MapApi;
   endpoints: MapEndpoints;
   ws?: WsFactory;

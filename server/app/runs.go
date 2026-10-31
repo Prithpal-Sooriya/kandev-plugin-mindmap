@@ -14,6 +14,9 @@ import (
 // task, records the task id and broadcasts. With NoopLauncher the run stays
 // queued without a task; Phase 2a plugs in the Host-backed launcher.
 func (s *Service) StartRun(ctx context.Context, nr store.NewRun) (store.RunRecord, error) {
+	if err := s.CheckRunCaps(nr.MapID, nr.Budget, 1); err != nil {
+		return store.RunRecord{}, err
+	}
 	run, token, err := s.Store.CreateRun(nr, s.Port())
 	if err != nil {
 		return run, err

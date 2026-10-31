@@ -19,6 +19,7 @@ import (
 
 	"kandev-plugin-mindmap/server/app"
 	"kandev-plugin-mindmap/server/contract"
+	"kandev-plugin-mindmap/server/share"
 	"kandev-plugin-mindmap/server/store"
 	"kandev-plugin-mindmap/server/tools"
 )
@@ -37,6 +38,8 @@ type Server struct {
 	svc      *app.Service
 	tools    *tools.Dispatcher
 	Profiles ProfileLister
+	links    *share.Links
+	limits   *share.Limiter
 
 	mu   sync.Mutex
 	http *http.Server
@@ -46,9 +49,27 @@ type Server struct {
 
 // New builds the server (not listening yet).
 func New(svc *app.Service, d *tools.Dispatcher) *Server {
-	s := &Server{svc: svc, tools: d}
+	s := &Server{svc: svc, tools: d, limits: share.NewLimiter(share.DefaultLimits())}
+	links, err := share.NewLinks(svc.Store, share.NewManager())
+	if err == nil && links != nil {
+		links.Port = svc.Port
+		s.links = links
+	}
 	s.mux = s.routes()
 	return s
+}
+
+// SetShare replaces the tunnel and the rate limiter (tests).
+func (s *Server) SetShare(l *share.Links, lim *share.Limiter) {
+	if l != nil {
+		if l.Port == nil {
+			l.Port = s.svc.Port
+		}
+		s.links = l
+	}
+	if lim != nil {
+		s.limits = lim
+	}
 }
 
 // Handler is the root handler (tests).
@@ -88,6 +109,9 @@ func (s *Server) Start() (int, error) {
 
 // Close stops the server.
 func (s *Server) Close() error {
+	if s.links != nil {
+		s.links.Shutdown()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.http == nil {
@@ -119,17 +143,25 @@ func (s *Server) routes() *http.ServeMux {
 	m("GET /m/{token}/api/profiles", s.profiles)
 	m("POST /m/{token}/api/tokens/personal", s.personalToken)
 	m("GET /m/{token}/assets/{id}", s.assetOrStatic)
+	m("POST /m/{token}/api/maps/{map}/share", s.shareMap)
+	m("POST /m/{token}/api/maps/{map}/share/rotate", s.rotateShare)
+	m("DELETE /m/{token}/api/maps/{map}/share", s.stopShare)
+	m("GET /m/{token}/api/maps/{map}/share", s.shareStatus)
+	m("POST /m/{token}/api/kill", s.killSharing)
+	m("POST /m/{token}/api/join", s.joinGuest)
+	m("GET /m/{token}/api/maps/{map}/audit", s.audit)
+	m("GET /m/{token}/api/settings/share", s.getShareSettings)
+	m("PUT /m/{token}/api/settings/share", s.putShareSettings)
 	for _, p := range []string{
 		"POST /m/{token}/api/maps/{map}/swarms", "POST /m/{token}/api/maps/{map}/compile", "POST /m/{token}/api/maps/{map}/suggest",
 		"POST /m/{token}/api/runs/{run}/stop", "POST /m/{token}/api/runs/{run}/message", "POST /m/{token}/api/runs/{run}/approve",
-		"GET /m/{token}/api/maps/{map}/export.zip", "POST /m/{token}/api/maps/{map}/share", "POST /m/{token}/api/maps/{map}/share/rotate",
-		"DELETE /m/{token}/api/maps/{map}/share", "POST /m/{token}/api/kill",
+		"GET /m/{token}/api/maps/{map}/export.zip",
 	} {
 		m(p, func(w http.ResponseWriter, _ *http.Request, _ *principal) {
 			writeErr(w, contract.Errf(contract.ErrNotImplemented, "not built yet (Phase 2)"))
 		})
 	}
-	for _, method := range []string{"GET", "POST", "DELETE"} {
+	for _, method := range []string{"GET", "POST", "PUT", "DELETE"} {
 		m(method+" /m/{token}/api/{rest...}", func(w http.ResponseWriter, _ *http.Request, _ *principal) {
 			writeErr(w, contract.Errf(contract.ErrNotFound, "no such route"))
 		})
@@ -222,7 +254,7 @@ func (s *Server) guard(h func(w http.ResponseWriter, r *http.Request, p *princip
 					w.Header().Set("Access-Control-Allow-Origin", origin)
 					w.Header().Set("Vary", "Origin")
 					w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Mindmap-Contract")
-					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 				}
 			}
 			p = &principal{kind: info.Kind, token: info, scope: info.MapID, host: info.Kind == contract.TokenLocal}
@@ -235,15 +267,26 @@ func (s *Server) guard(h func(w http.ResponseWriter, r *http.Request, p *princip
 			}
 			return
 		}
+		if s.limits != nil && strings.Contains(r.URL.Path, "/api/") {
+			if err := s.limits.Allow(share.LimitAPI, s.limitKey(r, p)); err != nil {
+				writeErr(w, err)
+				return
+			}
+		}
 		h(w, r, p)
 	}
 }
 
-// participant resolves the acting participant of a principal on a map:
-// the host for local tokens. Share-token guests act through their own
-// participant (resolved by the WS hello; HTTP routes act as the map's
-// first guest-less identity, the host's guests are Phase 2d).
-func (s *Server) participant(p *principal, mapID string) (contract.Participant, error) {
+// participant resolves who an HTTP call acts as. Local tokens act as the
+// host. Share tokens act as the guest bound to the mm_guest cookie; a share
+// call with no cookie has not joined yet.
+func (s *Server) participant(p *principal, r *http.Request, mapID string) (contract.Participant, error) {
+	if p.kind == contract.TokenShare {
+		if pt, ok := s.guestParticipant(r, p.token); ok {
+			return pt, nil
+		}
+		return contract.Participant{}, contract.Errf(contract.ErrBadRequest, "join the map first")
+	}
 	if p.token.ParticipantID != "" && p.kind != contract.TokenLocal {
 		return s.svc.Store.GetParticipant(p.token.ParticipantID)
 	}
