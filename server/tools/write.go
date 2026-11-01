@@ -581,7 +581,7 @@ func (t *Tools) writeDoc(_ context.Context, s *session, a any) (contract.ToolRes
 	}
 	meta := &contract.DocMeta{Path: args.Path, SourceIDs: sources, RunID: runID, CompiledAt: t.now()}
 	var op contract.Op
-	var id, verb string
+	var id, verb, target string
 	if args.DocID != "" {
 		did, err := t.writeNode(s, "doc_id", args.DocID, "")
 		if err != nil {
@@ -596,7 +596,7 @@ func (t *Tools) writeDoc(_ context.Context, s *session, a any) (contract.ToolRes
 			}
 		}
 		ttl, body := args.Title, args.Body
-		id, verb = did, "updated"
+		id, verb, target = did, "updated", did
 		op = newOp(s.mapID, &contract.NodeUpdatePayload{ID: did, Set: &contract.NodeFields{Title: &ttl, BodyMD: &body, Doc: meta}})
 	} else {
 		def := ""
@@ -611,11 +611,11 @@ func (t *Tools) writeDoc(_ context.Context, s *session, a any) (contract.ToolRes
 		if err != nil {
 			return contract.ToolResult{}, err
 		}
-		id, verb = store.NewID(contract.PrefixNode), "wrote"
+		id, verb, target = store.NewID(contract.PrefixNode), "wrote", parent
 		op = newOp(s.mapID, &contract.NodeCreatePayload{Node: contract.NodeInit{ID: id, ParentID: parent, Order: contract.OrderBetween(ti.lastChild(parent), ""),
 			Title: args.Title, BodyMD: args.Body, Kind: contract.KindDoc, Doc: meta}})
 	}
-	out, err := t.commit(s, []contract.Op{op}, false)
+	out, err := t.commit(s, []contract.Op{op}, s.run != nil && t.svc.LiveCompileDoc(*s.run, target))
 	if err != nil {
 		return contract.ToolResult{}, err
 	}

@@ -307,14 +307,6 @@ func TestCompileWavesAndRepoTarget(t *testing.T) {
 func TestCompileGuestApprovalAndCaps(t *testing.T) {
 	p, h := newTestPluginHost(t)
 	m, _ := compileMap(t, p)
-	if st, b := api(t, p, "PUT", "/api/settings/share", map[string]any{"provider": "cloudflared", "max_concurrent_runs": 2, "require_guest_run_approval": true}); st != 200 {
-		t.Fatalf("share settings: %d %s", st, b)
-	}
-	// Three section agents start at once: over a cap of two, nothing starts.
-	st, b := api(t, p, "POST", "/api/maps/"+m.ID+"/compile", map[string]any{"node_id": m.RootID, "profile_id": "prof-claude"})
-	if st != 403 || !strings.Contains(string(b), string(contract.ErrBudgetExceeded)) || len(h.Created()) != 0 || len(docNodes(t, p, m)) != 0 {
-		t.Fatalf("compile over cap: %d %s", st, b)
-	}
 	if st, b := api(t, p, "PUT", "/api/settings/share", map[string]any{"provider": "cloudflared", "max_concurrent_runs": 5, "require_guest_run_approval": true}); st != 200 {
 		t.Fatalf("share settings: %d %s", st, b)
 	}
@@ -347,6 +339,225 @@ func TestCompileGuestApprovalAndCaps(t *testing.T) {
 	}
 	if s, _ := p.store.RunByTask("task-4"); s.Status == contract.RunWaiting {
 		t.Fatalf("synthesis held: %+v", s)
+	}
+}
+
+func TestCompileQueuesWithinSharedRunCap(t *testing.T) {
+	p, h := newTestPluginHost(t)
+	m := newMapViaAPI(t, p)
+	host, err := p.store.HostParticipant(m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.store.InsertShare(store.NewID(contract.PrefixShare), m.ID, "cloudflared", host.ID); err != nil {
+		t.Fatal(err)
+	}
+	branches := addKids(t, p, m, m.RootID, "", "One", "Two", "Three", "Four", "Five", "Six")
+	// A shared map allows 4 concurrent runs: 4 of 6 sections start, the rest queue.
+	runs := apiRuns(t, p, "/api/maps/"+m.ID+"/compile", map[string]any{"node_id": m.RootID, "profile_id": "prof-claude"})
+	if len(runs) != 5 || len(h.Created()) != 4 {
+		t.Fatalf("first wave: %d runs, %d tasks", len(runs), len(h.Created()))
+	}
+	// No slot free: another compile is refused before it writes anything.
+	docs := len(docNodes(t, p, m))
+	st, b := api(t, p, "POST", "/api/maps/"+m.ID+"/compile", map[string]any{"node_id": branches[0], "profile_id": "prof-claude"})
+	if st != 403 || !strings.Contains(string(b), string(contract.ErrBudgetExceeded)) || len(h.Created()) != 4 || len(docNodes(t, p, m)) != docs {
+		t.Fatalf("compile with no free slot: %d %s", st, b)
+	}
+	// A section that ends frees its slot for the next one.
+	state(p, runs[1].TaskID, "COMPLETED")
+	if len(h.Created()) != 5 {
+		t.Fatalf("after one section ended: %d tasks", len(h.Created()))
+	}
+	state(p, runs[2].TaskID, "FAILED")
+	if len(h.Created()) != 6 {
+		t.Fatalf("after two sections ended: %d tasks", len(h.Created()))
+	}
+	plan := map[string]bool{}
+	for i := range h.Created() {
+		r, _ := p.store.RunByTask(fmt.Sprintf("task-%d", i+1))
+		plan[r.NodeID] = true
+	}
+	for _, id := range branches {
+		if !plan[id] {
+			t.Fatalf("section %s never started", id)
+		}
+	}
+	// The synthesis waits for every section.
+	for _, tid := range []string{runs[3].TaskID, runs[4].TaskID, "task-5"} {
+		state(p, tid, "COMPLETED")
+		if len(h.Created()) != 6 {
+			t.Fatalf("synthesis started early: %d tasks", len(h.Created()))
+		}
+	}
+	state(p, "task-6", "COMPLETED")
+	if len(h.Created()) != 7 {
+		t.Fatalf("synthesis not started: %d tasks", len(h.Created()))
+	}
+	if s, err := p.store.RunByTask("task-7"); err != nil || s.Template != contract.TemplateSynthesis || s.ParentRunID != runs[0].ID {
+		t.Fatalf("synthesis run: %+v %v", s, err)
+	}
+}
+
+func TestRecompileUpdatesDocTree(t *testing.T) {
+	p, h := newTestPluginHost(t)
+	h.config["export_dir"] = t.TempDir()
+	m, branches := compileMap(t, p)
+	finish := func(runs []contract.Run) {
+		t.Helper()
+		for _, r := range runs[1:] {
+			state(p, r.TaskID, "COMPLETED")
+		}
+		synth, _ := p.store.RunByTask(fmt.Sprintf("task-%d", len(h.Created())))
+		if synth.Template != contract.TemplateSynthesis {
+			t.Fatalf("no synthesis: %+v", synth)
+		}
+		state(p, synth.TaskID, "COMPLETED")
+		if c := getRun(t, p, runs[0].ID); c.Status != contract.RunDone {
+			t.Fatalf("compile: %s", c.Status)
+		}
+	}
+	byPath := func() map[string]contract.Node {
+		out := map[string]contract.Node{}
+		for _, d := range docNodes(t, p, m) {
+			if _, dup := out[d.Doc.Path]; dup {
+				t.Fatalf("two docs at %s", d.Doc.Path)
+			}
+			out[d.Doc.Path] = d
+		}
+		return out
+	}
+	first := apiRuns(t, p, "/api/maps/"+m.ID+"/compile", map[string]any{"node_id": m.RootID, "profile_id": "prof-claude"})
+	before := byPath()
+	pricing := before["pricing/index.md"]
+	if res := tool(t, p, first[1].TaskID, "write_doc", map[string]any{"doc_id": pricing.ID, "title": "Pricing", "path": "pricing/index.md", "body": "Old pricing."}); res.IsError {
+		t.Fatal(res.Text)
+	}
+	if res := tool(t, p, first[1].TaskID, "write_doc", map[string]any{"parent_doc_id": pricing.ID, "title": "Free tier", "path": "pricing/free-tier.md", "body": "Old free."}); res.IsError {
+		t.Fatal(res.Text)
+	}
+	// Recompiling while the first compile runs would race its agents.
+	if st, b := api(t, p, "POST", "/api/maps/"+m.ID+"/compile", map[string]any{"node_id": m.RootID, "profile_id": "prof-claude"}); st != 409 {
+		t.Fatalf("recompile during compile: %d %s", st, b)
+	}
+	finish(first)
+	before = byPath()
+
+	// The branch changes: Risks is renamed, a branch is added.
+	host, _ := p.store.HostParticipant(m.ID)
+	ttl := "Risks and mitigations"
+	if _, err := p.svc.Submit(m.ID, []contract.Op{{ID: store.NewID(contract.PrefixOp), MapID: m.ID, Type: contract.OpNodeUpdate,
+		Payload: &contract.NodeUpdatePayload{ID: branches[2], Set: &contract.NodeFields{Title: &ttl}}}}, app.SubmitOptions{Actor: contract.Actor{ParticipantID: host.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	addKids(t, p, m, m.RootID, "", "Launch plan")
+	second := apiRuns(t, p, "/api/maps/"+m.ID+"/compile", map[string]any{"node_id": m.RootID, "profile_id": "prof-claude"})
+	if len(second) != 5 {
+		t.Fatalf("second compile: %d runs", len(second))
+	}
+	after := byPath()
+	trees, _ := p.svc.DocTrees(m.ID)
+	if len(trees) != 1 {
+		t.Fatalf("doc trees after recompile: %d", len(trees))
+	}
+	for _, path := range []string{"index.md", "product-launch.md", "pricing/index.md", "research/index.md", "pricing/free-tier.md"} {
+		if after[path].ID != before[path].ID {
+			t.Fatalf("%s was recreated: %s -> %s", path, before[path].ID, after[path].ID)
+		}
+	}
+	// Renamed: same doc (matched by its source branch), new title and path.
+	risks := after["risks-and-mitigations/index.md"]
+	if risks.ID != before["risks/index.md"].ID || risks.Title != ttl {
+		t.Fatalf("renamed section doc: %+v", risks)
+	}
+	if _, ok := after["risks/index.md"]; ok {
+		t.Fatal("old path kept")
+	}
+	if launch, ok := after["launch-plan/index.md"]; !ok || launch.ParentID != after["index.md"].ID {
+		t.Fatalf("new section doc: %+v", launch)
+	}
+	if len(after) != len(before)+1 {
+		t.Fatalf("docs: %d before, %d after", len(before), len(after))
+	}
+	// The section agent is pointed at the existing docs and updates them.
+	pr := prompt(h, len(h.Created())-4)
+	if !strings.Contains(pr, `doc_id: "`+pricing.ID+`"`) || !strings.Contains(pr, `exists: `+"`"+`doc_id: "`+before["pricing/free-tier.md"].ID+`"`) {
+		t.Fatalf("recompile prompt:\n%s", pr)
+	}
+	if res := tool(t, p, second[1].TaskID, "write_doc", map[string]any{"doc_id": pricing.ID, "title": "Pricing v2", "path": "pricing/index.md", "body": "New pricing."}); res.IsError {
+		t.Fatal(res.Text)
+	}
+	if d := byPath()["pricing/index.md"]; d.ID != pricing.ID || d.Title != "Pricing v2" || d.BodyMD != "New pricing." {
+		t.Fatalf("updated section doc: %+v", d)
+	}
+	finish(second)
+	if trees, _ := p.svc.DocTrees(m.ID); len(trees) != 1 || trees[0].ExportedTo == "" {
+		t.Fatalf("doc trees: %+v", trees)
+	}
+}
+
+func TestProposeCompileWritesDocsLive(t *testing.T) {
+	p, h := newTestPluginHost(t)
+	h.config["export_dir"] = t.TempDir()
+	m, branches := compileMap(t, p)
+	runs := apiRuns(t, p, "/api/maps/"+m.ID+"/compile", map[string]any{"node_id": m.RootID, "profile_id": "prof-claude", "mode": "propose"})
+	if runs[1].Mode != contract.ModePropose || !strings.Contains(prompt(h, 0), "Propose mode covers your other edits only") {
+		t.Fatalf("section run: %+v", runs[1])
+	}
+	var pricing contract.Node
+	for _, d := range docNodes(t, p, m) {
+		if d.Doc.Path == "pricing/index.md" {
+			pricing = d
+		}
+	}
+	if res := tool(t, p, runs[1].TaskID, "write_doc", map[string]any{"doc_id": pricing.ID, "title": "Pricing", "path": "pricing/index.md",
+		"body": "Three tiers and a student discount."}); res.IsError {
+		t.Fatal(res.Text)
+	}
+	if res := tool(t, p, runs[1].TaskID, "write_doc", map[string]any{"parent_doc_id": pricing.ID, "title": "Tiers", "path": "pricing/tiers.md", "body": "Free, Pro, Team."}); res.IsError {
+		t.Fatal(res.Text)
+	}
+	// Other edits are still proposals.
+	if res := tool(t, p, runs[1].TaskID, "add", map[string]any{"parent_id": branches[0], "nodes": []map[string]any{{"title": "Enterprise tier"}}}); res.IsError {
+		t.Fatal(res.Text)
+	}
+	snap, _ := p.store.Snapshot(m.ID)
+	for _, n := range snap.Nodes {
+		if n.Title == "Enterprise tier" {
+			t.Fatal("a propose-mode add was applied")
+		}
+	}
+	// A doc outside the compile's tree is proposed too.
+	if res := tool(t, p, runs[1].TaskID, "write_doc", map[string]any{"title": "Stray", "path": "stray.md", "body": "x"}); res.IsError {
+		t.Fatal(res.Text)
+	}
+	for _, d := range docNodes(t, p, m) {
+		if d.Title == "Stray" {
+			t.Fatal("a doc outside the compile tree was applied")
+		}
+	}
+	for _, r := range runs[1:] {
+		state(p, r.TaskID, "COMPLETED")
+	}
+	synth, err := p.store.RunByTask("task-4")
+	if err != nil || synth.Template != contract.TemplateSynthesis || synth.Mode != contract.ModePropose {
+		t.Fatalf("synthesis: %+v %v", synth, err)
+	}
+	var root contract.Node
+	for _, d := range docNodes(t, p, m) {
+		if d.ParentID == m.RootID {
+			root = d
+		}
+	}
+	res := tool(t, p, synth.TaskID, "read", map[string]any{"node_id": root.ID, "depth": 4, "include_bodies": true})
+	if res.IsError || !strings.Contains(res.Text, "Three tiers and a student discount.") || !strings.Contains(res.Text, "Free, Pro, Team.") {
+		t.Fatalf("synthesis read:\n%s", res.Text)
+	}
+	if res := tool(t, p, synth.TaskID, "write_doc", map[string]any{"doc_id": root.ID, "title": "Overview", "path": "index.md", "body": "# Overview"}); res.IsError {
+		t.Fatal(res.Text)
+	}
+	if n, _ := p.store.Node(m.ID, root.ID); n.BodyMD != "# Overview" {
+		t.Fatalf("synthesis doc not live: %q", n.BodyMD)
 	}
 }
 

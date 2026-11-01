@@ -64,7 +64,8 @@ type SectionPlan struct {
 type ChildPlan struct {
 	NodeID string `json:"node_id"`
 	Title  string `json:"title"`
-	File   string `json:"file"` // <child>.md inside the section folder
+	File   string `json:"file"`             // <child>.md inside the section folder
+	DocID  string `json:"doc_id,omitempty"` // its sub-doc from an earlier compile
 }
 
 // compilePlan is a compile's layout and progress, kept in kv under
@@ -317,6 +318,12 @@ func (s *Service) StartCompile(ctx context.Context, spec CompileSpec) ([]store.R
 	if slug == "" {
 		slug = "mindmap"
 	}
+	prevRoot, prevRec := s.previousDocs(spec.MapID, spec.NodeID, slug)
+	if prevRec.CoordRunID != "" {
+		if c, err := s.Store.GetRun(prevRec.CoordRunID); err == nil && !c.Status.Terminal() {
+			return nil, contract.Errf(contract.ErrConflict, "a compile of this branch into %q is still running (%s); wait for it or stop it", slug, c.ID)
+		}
+	}
 
 	per := CompileSectionBudget
 	clamped, err := s.clampGuestBudget(store.NewRun{MapID: spec.MapID, StartedBy: spec.StartedBy, Budget: &per})
@@ -328,7 +335,13 @@ func (s *Service) StartCompile(ctx context.Context, spec CompileSpec) ([]store.R
 	if err != nil {
 		return nil, err
 	}
-	first := min(len(sections), MaxCompileParallel)
+	// The first wave fits in the free run slots; the rest start as section
+	// runs end. With no slot free, CheckRunCaps refuses the one.
+	free, err := s.freeRunSlots(spec.MapID)
+	if err != nil {
+		return nil, err
+	}
+	first := max(1, min(len(sections), MaxCompileParallel, free))
 	if !hold {
 		if err := s.CheckRunCaps(spec.MapID, &per, first); err != nil {
 			return nil, err
@@ -352,8 +365,9 @@ func (s *Service) StartCompile(ctx context.Context, spec CompileSpec) ([]store.R
 	s.announceRun(coord, node)
 
 	plan := compilePlan{MapID: spec.MapID, NodeID: spec.NodeID, Title: node.Title, Slug: slug, Target: spec.Target, RepoID: repo,
-		ProfileID: nr.ProfileID, ProfileName: nr.ProfileName, Harness: nr.Harness, StartedBy: spec.StartedBy, Section: per, Sections: sections}
-	if err := s.addDocPlaceholders(&plan, node); err != nil {
+		ProfileID: nr.ProfileID, ProfileName: nr.ProfileName, Harness: nr.Harness, StartedBy: spec.StartedBy, Section: per, Sections: sections,
+		DocRootID: prevRoot}
+	if err := s.addDocPlaceholders(&plan, node, prevRec); err != nil {
 		coord, _ = s.UpdateRun(coord.ID, func(r *store.RunRecord) bool {
 			r.Status, r.Error = contract.RunFailed, "could not create the doc nodes: "+err.Error()
 			return true
@@ -362,7 +376,7 @@ func (s *Service) StartCompile(ctx context.Context, spec CompileSpec) ([]store.R
 		return []store.RunRecord{coord}, err
 	}
 	s.savePlan(coord.ID, plan)
-	s.saveDocRecord(plan.DocRootID, docRecord{Slug: slug, SingleDocID: plan.SingleDocID, CoordRunID: coord.ID, Target: spec.Target})
+	s.saveDocRecord(plan.DocRootID, docRecord{Slug: slug, SingleDocID: plan.SingleDocID, CoordRunID: coord.ID, Target: spec.Target, ExportedTo: prevRec.ExportedTo})
 
 	out := []store.RunRecord{coord}
 	s.withCompile(coord.ID, func() {
@@ -419,36 +433,130 @@ func errText(err error) string {
 	return err.Error()
 }
 
-// addDocPlaceholders creates the doc root (the overview index) under the
-// node, the single doc and one doc per section under it, as the human who
-// started the compile.
-func (s *Service) addDocPlaceholders(plan *compilePlan, node contract.Node) error {
-	last := ""
+// freeRunSlots is how many more runs the map's concurrency cap allows now
+// (MaxCompileParallel when the map has no cap).
+func (s *Service) freeRunSlots(mapID string) (int, error) {
+	m, err := s.Store.GetMap(mapID)
+	if err != nil {
+		return 0, err
+	}
+	caps, err := s.runCaps(m)
+	if err != nil {
+		return 0, err
+	}
+	if caps.MaxConcurrent <= 0 {
+		return MaxCompileParallel, nil
+	}
+	active, err := s.Store.CountActiveRuns(mapID)
+	if err != nil {
+		return 0, err
+	}
+	return max(0, caps.MaxConcurrent-active), nil
+}
+
+// previousDocs finds the doc tree an earlier compile of the node wrote
+// under the same slug (the newest when there are several), so a recompile
+// updates it instead of adding a second tree.
+func (s *Service) previousDocs(mapID, nodeID, slug string) (string, docRecord) {
+	rootID := ""
+	var rec docRecord
+	_ = s.Store.View(mapID, func(_ contract.Map, nodes map[string]*contract.Node, _ map[string]*contract.Link) error {
+		kids := childIndex(nodes)
+		for _, r := range docRoots(nodes) {
+			if r.ParentID != nodeID {
+				continue
+			}
+			if sl, _ := s.docSlug(r, kids); sl == slug {
+				rootID = r.ID
+				rec, _ = s.loadDocRecord(r.ID)
+				return nil
+			}
+		}
+		return nil
+	})
+	return rootID, rec
+}
+
+// addDocPlaceholders lays out the doc tree as the human who started the
+// compile: the doc root (the overview index) under the node, the single doc
+// and one doc per section under it. When plan.DocRootID names the tree of
+// an earlier compile, its docs are updated in place (titles, paths and
+// sources; bodies stay until an agent rewrites them): the single doc by the
+// recorded id or its path, a section doc by its path or else its source
+// branch, a sub-doc by its path. Docs with no match are created.
+func (s *Service) addDocPlaceholders(plan *compilePlan, node contract.Node, prev docRecord) error {
+	last, rootLast := "", ""
+	meta := map[string]contract.DocMeta{}
+	byPath, bySource, subByPath := map[string]string{}, map[string]string{}, map[string]string{}
+	singleID := ""
 	_ = s.Store.View(plan.MapID, func(_ contract.Map, nodes map[string]*contract.Node, _ map[string]*contract.Link) error {
-		for _, n := range nodes {
-			if !n.Deleted && n.ParentID == node.ID && n.Order > last {
-				last = n.Order
+		kids := childIndex(nodes)
+		for _, n := range kids[node.ID] {
+			last = max(last, n.Order)
+		}
+		if r := nodes[plan.DocRootID]; r == nil || r.Deleted || r.Kind != contract.KindDoc || r.ParentID != node.ID {
+			plan.DocRootID = ""
+			return nil
+		}
+		meta[plan.DocRootID] = *nodes[plan.DocRootID].Doc
+		for _, c := range kids[plan.DocRootID] {
+			rootLast = max(rootLast, c.Order)
+			if c.Kind != contract.KindDoc || c.Doc == nil {
+				continue
+			}
+			meta[c.ID] = *c.Doc
+			if c.ID == prev.SingleDocID || singleID == "" && c.Doc.Path == plan.Slug+".md" {
+				singleID = c.ID
+			}
+			byPath[c.Doc.Path] = c.ID
+			if len(c.Doc.SourceIDs) > 0 && bySource[c.Doc.SourceIDs[0]] == "" {
+				bySource[c.Doc.SourceIDs[0]] = c.ID
+			}
+			for _, g := range kids[c.ID] {
+				if g.Kind == contract.KindDoc && g.Doc != nil {
+					subByPath[c.ID+"/"+g.Doc.Path] = g.ID
+				}
 			}
 		}
 		return nil
 	})
 	pending := "_Compiling… an agent is writing this doc._"
-	mk := func(id, parent, order, title, path string, sources []string) contract.Op {
-		return contract.Op{ID: store.NewID(contract.PrefixOp), MapID: plan.MapID, Type: contract.OpNodeCreate, Payload: &contract.NodeCreatePayload{
-			Node: contract.NodeInit{ID: id, ParentID: parent, Order: order, Title: title, BodyMD: pending, Kind: contract.KindDoc,
-				Doc: &contract.DocMeta{Path: path, SourceIDs: sources}}}}
+	var ops []contract.Op
+	used := map[string]bool{}
+	// put creates a doc, or updates the existing one with id.
+	put := func(id, parent string, order *string, title, path string, sources []string) string {
+		if old, ok := meta[id]; ok && !used[id] {
+			used[id] = true
+			old.Path, old.SourceIDs = path, sources
+			ops = append(ops, contract.Op{ID: store.NewID(contract.PrefixOp), MapID: plan.MapID, Type: contract.OpNodeUpdate,
+				Payload: &contract.NodeUpdatePayload{ID: id, Set: &contract.NodeFields{Title: &title, Doc: &old}}})
+			return id
+		}
+		id = store.NewID(contract.PrefixNode)
+		*order = contract.OrderBetween(*order, "")
+		ops = append(ops, contract.Op{ID: store.NewID(contract.PrefixOp), MapID: plan.MapID, Type: contract.OpNodeCreate, Payload: &contract.NodeCreatePayload{
+			Node: contract.NodeInit{ID: id, ParentID: parent, Order: *order, Title: title, BodyMD: pending, Kind: contract.KindDoc,
+				Doc: &contract.DocMeta{Path: path, SourceIDs: sources}}}})
+		return id
 	}
-	plan.DocRootID, plan.SingleDocID = store.NewID(contract.PrefixNode), store.NewID(contract.PrefixNode)
-	ops := []contract.Op{
-		mk(plan.DocRootID, node.ID, contract.OrderBetween(last, ""), truncTitle(node.Title+" · docs"), "index.md", []string{node.ID}),
-	}
-	order := contract.OrderBetween("", "")
-	ops = append(ops, mk(plan.SingleDocID, plan.DocRootID, order, truncTitle(node.Title), plan.Slug+".md", []string{node.ID}))
+	plan.DocRootID = put(plan.DocRootID, node.ID, &last, truncTitle(node.Title+" · docs"), "index.md", []string{node.ID})
+	plan.SingleDocID = put(singleID, plan.DocRootID, &rootLast, truncTitle(node.Title), plan.Slug+".md", []string{node.ID})
 	for i := range plan.Sections {
 		sec := &plan.Sections[i]
-		sec.DocID = store.NewID(contract.PrefixNode)
-		order = contract.OrderBetween(order, "")
-		ops = append(ops, mk(sec.DocID, plan.DocRootID, order, sec.Title, sec.Dir+"/index.md", []string{sec.NodeID}))
+		id := byPath[sec.Dir+"/index.md"]
+		if id == "" || used[id] {
+			id = bySource[sec.NodeID]
+		}
+		sec.DocID = put(id, plan.DocRootID, &rootLast, sec.Title, sec.Dir+"/index.md", []string{sec.NodeID})
+		if id != sec.DocID {
+			continue
+		}
+		for j := range sec.Children {
+			c := &sec.Children[j]
+			if d := subByPath[sec.DocID+"/"+sec.Dir+"/"+c.File]; d != "" {
+				c.DocID = d
+			}
+		}
 	}
 	_, err := s.Submit(plan.MapID, ops, SubmitOptions{Actor: contract.Actor{ParticipantID: plan.StartedBy}, NoLocks: true})
 	return err
@@ -506,7 +614,8 @@ func (s *Service) withCompile(coordID string, fn func()) {
 	}
 }
 
-// compileStep starts waiting section runs while there is room, starts the
+// compileStep starts queued section runs while there is room (at most
+// MaxCompileParallel unsettled, within the map's free run slots), starts the
 // synthesis once every section has settled, sums up the coordinator's
 // status and, for a folder target, writes the docs to disk when the
 // synthesis is done. Callers go through withCompile.
@@ -543,7 +652,9 @@ func (s *Service) compileStep(ctx context.Context, coordID string) {
 			if sec.RunID != "" || sec.Error != "" {
 				continue
 			}
-			if active >= MaxCompileParallel || s.coordinatorStopped(coordID) {
+			// Wait for a free run slot: the map's cap counts every active
+			// run, so the next section starts once an earlier one ends.
+			if active >= MaxCompileParallel || s.coordinatorStopped(coordID) || s.CheckRunCaps(plan.MapID, &plan.Section, 1) != nil {
 				break
 			}
 			r, err := s.startSection(ctx, coord, plan, i, true)
@@ -679,15 +790,46 @@ func (s *Service) compileBrief(r store.RunRecord) string {
 	if !ok {
 		return ""
 	}
+	brief := ""
 	if r.Template == contract.TemplateSynthesis {
-		return s.synthesisBrief(plan)
+		brief = s.synthesisBrief(plan)
 	}
 	for _, sec := range plan.Sections {
-		if sec.NodeID == r.NodeID {
-			return sectionBrief(plan, sec)
+		if brief == "" && sec.NodeID == r.NodeID {
+			brief = sectionBrief(plan, sec)
 		}
 	}
-	return ""
+	if brief != "" && r.Mode == contract.ModePropose {
+		brief += "- Propose mode covers your other edits only: `write_doc` into this doc tree is applied to the map at once, so the other compile agents can read it.\n"
+	}
+	return brief
+}
+
+// LiveCompileDoc reports whether a write_doc by run on docID (the doc it
+// updates, or the parent of a new doc) goes to the live map even in
+// propose mode. A compile's section and synthesis runs write their own
+// doc tree live: the synthesis run reads the section docs from the map.
+func (s *Service) LiveCompileDoc(run store.RunRecord, docID string) bool {
+	if run.Mode != contract.ModePropose || run.Template != contract.TemplateCompile && run.Template != contract.TemplateSynthesis || run.ParentRunID == "" {
+		return false
+	}
+	plan, ok := s.loadPlan(run.ParentRunID)
+	if !ok || plan.MapID != run.MapID || plan.DocRootID == "" {
+		return false
+	}
+	live := false
+	_ = s.Store.View(plan.MapID, func(_ contract.Map, nodes map[string]*contract.Node, _ map[string]*contract.Link) error {
+		n := nodes[docID]
+		for depth := 0; n != nil && !n.Deleted && n.Kind == contract.KindDoc && depth < 64; depth++ {
+			if n.ID == plan.DocRootID {
+				live = true
+				break
+			}
+			n = nodes[n.ParentID]
+		}
+		return nil
+	})
+	return live
 }
 
 func layoutBlock(slug string) string {
@@ -706,12 +848,16 @@ func sectionBrief(plan compilePlan, sec SectionPlan) string {
 	fmt.Fprintf(&b, "You write one section of the compiled docs of \"%s\". The docs are laid out like this (`write_doc` paths are relative to the `%s/` folder):\n\n", plan.Title, plan.Slug)
 	b.WriteString(layoutBlock(plan.Slug))
 	fmt.Fprintf(&b, "\n- Your branch: [%s] \"%s\" (%d direct children, about %d words).\n", sec.NodeID, sec.Title, len(sec.Children), sec.Words)
-	fmt.Fprintf(&b, "- Your section doc already exists as a placeholder: [%s]. Replace it with `write_doc` and `doc_id: \"%s\"`, `path: \"%s/index.md\"`.\n", sec.DocID, sec.DocID, sec.Dir)
+	fmt.Fprintf(&b, "- Your section doc already exists: [%s]. Replace it with `write_doc` and `doc_id: \"%s\"`, `path: \"%s/index.md\"`.\n", sec.DocID, sec.DocID, sec.Dir)
 	if sec.Split {
-		fmt.Fprintf(&b, "- This branch is large (%d children, about %d words), so split it. Make `%s/index.md` a short overview of the branch that links to one sub-doc per child branch. Write each sub-doc with `write_doc` and `parent_doc_id: \"%s\"`:\n",
+		fmt.Fprintf(&b, "- This branch is large (%d children, about %d words), so split it. Make `%s/index.md` a short overview of the branch that links to one sub-doc per child branch. Write each sub-doc with `write_doc` and `parent_doc_id: \"%s\"`, or `doc_id` where it already exists:\n",
 			len(sec.Children), sec.Words, sec.Dir, sec.DocID)
 		for _, c := range sec.Children {
-			fmt.Fprintf(&b, "  - [%s] \"%s\" → path `%s/%s` (link to it from the overview as `%s`)\n", c.NodeID, c.Title, sec.Dir, c.File, c.File)
+			existing := ""
+			if c.DocID != "" {
+				existing = fmt.Sprintf(", exists: `doc_id: \"%s\"`", c.DocID)
+			}
+			fmt.Fprintf(&b, "  - [%s] \"%s\" → path `%s/%s` (link to it from the overview as `%s`%s)\n", c.NodeID, c.Title, sec.Dir, c.File, c.File, existing)
 		}
 	} else {
 		b.WriteString("- Write one doc for the whole branch. Do not create sub-docs.\n")
@@ -749,7 +895,7 @@ func (s *Service) synthesisBrief(plan compilePlan) string {
 		if sec.Error != "" {
 			state = " (its agent did not start: write this section yourself from the branch)"
 		} else if r, err := s.Store.GetRun(sec.RunID); err == nil && !succeeded(r) {
-			state = fmt.Sprintf(" (its agent %s: if the doc is still a placeholder, write it yourself from the branch)", r.Status)
+			state = fmt.Sprintf(" (its agent %s: if the doc is still a placeholder or out of date, write it yourself from the branch)", r.Status)
 		}
 		fmt.Fprintf(&b, "  - [%s] \"%s\" → `%s/index.md`, from branch [%s]%s\n", sec.DocID, sec.Title, sec.Dir, sec.NodeID, state)
 	}
