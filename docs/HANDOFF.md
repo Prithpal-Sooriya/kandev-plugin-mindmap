@@ -22,9 +22,10 @@ How this is built: the build moved from Claude Code to Cursor on 2026-10-31. A C
 | Compile wave queue, recompile, propose-mode docs | Merged | PR #15 |
 | Default agent order: Pi, then Cursor, then Claude | Merged | PR #16 |
 | Run time budget, concurrency-cap race, stop windows | Merged | PR #17 |
-| 0.3.3 closeout: compile reserves run slots, cross-map asset attach is a conflict, one full live Pi compile in local Kandev | In review | branch `fix-compile-slots` |
+| 0.3.3 closeout: compile reserves run slots, cross-map asset attach is a conflict, one full live Pi compile in local Kandev | Merged | PR #18 |
+| 0.3.4 release: bump version and ship idle-turn nudge fix | In review | branch `release-0.3.4` |
 
-When no profile is given, runs use the first available of Pi, then Cursor, then Claude. The verification step for 0.3.3 is one full live compile with the Pi profile into a folder: section runs, the synthesis run, doc nodes, and the export (consolidated markdown plus a folder per branch).
+When no profile is given, runs use the first available of Pi, then Cursor, then Claude. The installed version in local Kandev is 0.3.4.
 
 A compile section or synthesis run counts as finished only when it is done, failed, stopped or in review. An agent that goes idle without calling `report` (Pi does this between turns) is told to finish its doc and report, at most twice. If it goes idle again without reporting, that run is marked failed and the compile moves on.
 
