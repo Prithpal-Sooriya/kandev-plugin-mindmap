@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -276,13 +277,24 @@ func (s *Store) submitLocked(st *mapState, ops []contract.Op, opt SubmitOptions)
 	}
 	if err := t.flush(); err != nil {
 		t.rollback(txnMark{})
-		return SubmitResult{}, contract.Errf(contract.ErrInternal, "commit: %v", err)
+		return SubmitResult{}, commitErr(err)
 	}
 	for _, c := range t.committed {
 		res.Committed = append(res.Committed, c.op)
 	}
 	res.Rev = st.m.Rev
 	return res, nil
+}
+
+// commitErr reports a failed flush. A write the database refuses for the
+// client's own reason (an asset id of another map) keeps its code; anything
+// else is internal.
+func commitErr(err error) error {
+	var e *contract.Error
+	if errors.As(err, &e) {
+		return e
+	}
+	return contract.Errf(contract.ErrInternal, "commit: %v", err)
 }
 
 func prefixField(err error, prefix string) error {

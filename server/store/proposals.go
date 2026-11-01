@@ -309,7 +309,7 @@ func (s *Store) ReviewProposal(id string, req contract.ReviewProposalRequest, re
 	}
 	if err := t.flush(); err != nil {
 		t.rollback(txnMark{})
-		return ReviewResult{}, contract.Errf(contract.ErrInternal, "commit: %v", err)
+		return ReviewResult{}, commitErr(err)
 	}
 	status := contract.ProposalStatus("")
 	nAcc, nRej, nPend := 0, 0, 0
