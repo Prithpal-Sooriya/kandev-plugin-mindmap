@@ -133,6 +133,33 @@ func (p *mindmapPlugin) defaultProfile(ctx context.Context) string {
 	return strings.TrimSpace(v)
 }
 
+// configExportDir is the plugin config's export_dir.
+func (p *mindmapPlugin) configExportDir(ctx context.Context) string {
+	h := p.Host()
+	if h == nil {
+		return ""
+	}
+	cfg, err := h.GetConfig(ctx)
+	if err != nil {
+		return ""
+	}
+	v, _ := cfg["export_dir"].(string)
+	return strings.TrimSpace(v)
+}
+
+// invokeUtility runs quick suggest's one-shot completion. An empty profile
+// uses Kandev's default utility profile.
+func (p *mindmapPlugin) invokeUtility(ctx context.Context, prompt, profileID string) (string, error) {
+	h := p.Host()
+	if h == nil {
+		return "", fmt.Errorf("host not connected")
+	}
+	if profileID == "" {
+		return h.InvokeUtilityAgent(ctx, prompt)
+	}
+	return h.InvokeUtilityAgent(ctx, prompt, pluginsdk.UtilityAgentOptions{ProfileID: profileID})
+}
+
 func (p *mindmapPlugin) listRepos(ctx context.Context, workspaceID string) ([]contract.RepoInfo, error) {
 	h := p.Host()
 	if h == nil {

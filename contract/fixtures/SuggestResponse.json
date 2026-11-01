@@ -1,5 +1,9 @@
 [
   {
+    "status": "done",
+    "job_id": "run_suggest00001",
+    "proposal_id": "prp_suggest00001",
+    "node_ids": ["nd_suggested0001"],
     "suggestions": [
       {
         "title": "Student discount",
@@ -7,5 +11,11 @@
         "body": "Half price with a school email."
       }
     ]
+  },
+  {
+    "status": "failed",
+    "job_id": "run_suggest00002",
+    "suggestions": [],
+    "error": "agent profile is not eligible for utility execution"
   }
 ]

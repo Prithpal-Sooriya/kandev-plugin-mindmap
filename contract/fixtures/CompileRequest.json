@@ -4,5 +4,11 @@
     "profile_id": "profile-claude",
     "slug": "note-app",
     "target": "dir"
+  },
+  {
+    "node_id": "nd_pricing000001",
+    "target": "repo",
+    "mode": "propose",
+    "repo_id": "repo-example"
   }
 ]

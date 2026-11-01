@@ -29,6 +29,9 @@ type PromptInput struct {
 	// Outline is the run's `context` text. It is included for harnesses
 	// that may have no tools, so mindmap-patch replies can name node ids.
 	Outline string
+	// Brief is run-specific instructions after the template (the doc ids
+	// and paths of a compile run).
+	Brief string
 }
 
 // TransportFor is how a harness reaches the tools. Claude, Cursor and Codex
@@ -108,6 +111,9 @@ func BuildPrompt(in PromptInput) string {
 	}
 	b.WriteString(TemplatePrompt(r.Template))
 	b.WriteString("\n\n")
+	if in.Brief != "" {
+		b.WriteString(strings.TrimSpace(in.Brief) + "\n\n")
+	}
 	if l := LensPrompt(r.Lens); l != "" {
 		b.WriteString(l + "\n\n")
 	}

@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"slices"
 	"time"
 
 	"kandev-plugin-mindmap/server/app"
@@ -22,6 +23,14 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, p *principal) 
 	}
 	if req.Template != "" && !req.Template.Valid() {
 		writeErr(w, contract.FieldErr(contract.ErrBadRequest, "template", "unknown template %q", req.Template))
+		return
+	}
+	if slices.Contains(contract.InternalTemplates, req.Template) {
+		route := "compile"
+		if req.Template == contract.TemplateSuggest {
+			route = "suggest"
+		}
+		writeErr(w, contract.FieldErr(contract.ErrBadRequest, "template", "%s runs start from POST .../%s", req.Template, route))
 		return
 	}
 	if req.Mode != "" && !req.Mode.Valid() {

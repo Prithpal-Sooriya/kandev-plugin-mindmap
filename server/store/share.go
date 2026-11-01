@@ -156,6 +156,7 @@ func (s *Store) CountActiveRuns(mapID string) (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT count(*) FROM runs WHERE map_id = ? AND status IN ('queued','running','waiting','review')
 		AND NOT (template = 'swarm' AND COALESCE(lens, '') = '')
+		AND NOT (template = 'compile' AND COALESCE(parent_run_id, '') = '' AND COALESCE(task_id, '') = '')
 		AND NOT (status = 'waiting' AND COALESCE(waiting_reason, '') = 'approval' AND COALESCE(task_id, '') = '')`, mapID).Scan(&n)
 	return n, err
 }

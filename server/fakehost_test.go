@@ -26,6 +26,8 @@ type fakeHost struct {
 	// onCreate runs inside Create before it returns (simulates events that
 	// arrive before the task id is known).
 	onCreate func(taskID string)
+	// utility answers InvokeUtilityAgent (quick suggest).
+	utility func(prompt, profileID string) (string, error)
 }
 
 type sentMessage struct{ TaskID, SessionID, Text string }
@@ -83,8 +85,18 @@ func (h *fakeHost) AgentProfiles() pluginsdk.AgentProfileReader             { re
 func (h *fakeHost) Messages() pluginsdk.MessageReader                       { return fakeMessages{h} }
 func (h *fakeHost) Workspaces() pluginsdk.WorkspaceReader                   { return fakeWorkspaces{} }
 func (h *fakeHost) Repositories() pluginsdk.RepositoryReader                { return fakeRepos{} }
-func (h *fakeHost) InvokeUtilityAgent(context.Context, string, ...pluginsdk.UtilityAgentOptions) (string, error) {
-	return "", errors.New("not in tests")
+func (h *fakeHost) InvokeUtilityAgent(_ context.Context, prompt string, opts ...pluginsdk.UtilityAgentOptions) (string, error) {
+	h.mu.Lock()
+	fn := h.utility
+	h.mu.Unlock()
+	if fn == nil {
+		return "", errors.New("not in tests")
+	}
+	profile := ""
+	if len(opts) > 0 {
+		profile = opts[0].ProfileID
+	}
+	return fn(prompt, profile)
 }
 
 type fakeTasks struct{ h *fakeHost }
