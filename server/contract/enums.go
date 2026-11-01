@@ -104,9 +104,14 @@ const (
 	TemplateCustom    Template = "custom"
 	TemplateExpand    Template = "expand"   // add the next level of branches
 	TemplateExamples  Template = "examples" // find real-world, cited examples
+	TemplateSuggest   Template = "suggest"  // one-shot utility agent: proposes child nodes (no task)
 )
 
-var Templates = []Template{TemplateResearch, TemplateExplore, TemplateSwarm, TemplateGarden, TemplateCritique, TemplateCompile, TemplateSynthesis, TemplateExecute, TemplateCustom, TemplateExpand, TemplateExamples}
+var Templates = []Template{TemplateResearch, TemplateExplore, TemplateSwarm, TemplateGarden, TemplateCritique, TemplateCompile, TemplateSynthesis, TemplateExecute, TemplateCustom, TemplateExpand, TemplateExamples, TemplateSuggest}
+
+// InternalTemplates are started only through their own endpoints (compile,
+// suggest), never through POST runs.
+var InternalTemplates = []Template{TemplateCompile, TemplateSynthesis, TemplateSuggest}
 
 func (t Template) Valid() bool { return slices.Contains(Templates, t) }
 

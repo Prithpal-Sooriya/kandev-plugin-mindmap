@@ -49,6 +49,8 @@ export class MapController {
   /** Characters typed after ⌘K but before the palette input mounted. */
   paletteSeed = "";
   dockOpen = false;
+  /** The dock's run filter; the header "needs you" chip sets "needs". */
+  dockFilter: "all" | "needs" = "all";
   followingRun: string | null = null;
   replayRev: number | null = null;
   replayDoc: import("../core/doc").Doc | null = null;

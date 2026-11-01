@@ -6,7 +6,7 @@
 import type { PluginHostApi } from "@kandev/plugin-sdk";
 import type { OutputLine, Participant, Run, SessionResponse } from "../contract";
 import type { HostAdapter, Theme } from "../host/adapter";
-import { isNetworkError, jsonInit, mapApi, readJson } from "../host/http";
+import { isNetworkError, jsonInit, mapApi, readBlob, readJson } from "../host/http";
 import type { MapEndpoints, WsLike } from "../transport/connection";
 
 const ROUTE = "/mindmap";
@@ -47,6 +47,19 @@ export function kandevAdapter(host: PluginHostApi): HostAdapter {
     return readJson<T>(await webhook("api", "", jsonInit("POST", { method, path: `/api${path}`, ...(body !== undefined ? { body } : {}) })));
   };
 
+  const blob = async (path: string): Promise<Blob> => {
+    const s = await getSession();
+    if (!loopbackBlocked) {
+      try {
+        return await readBlob(await fetch(`${loopbackBase(s)}/api${path}`, { headers: jsonInit("GET").headers, mode: "cors" }));
+      } catch (e) {
+        if (!isNetworkError(e)) throw e;
+        loopbackBlocked = true;
+      }
+    }
+    return readBlob(await webhook("api", "", jsonInit("POST", { method: "GET", path: `/api${path}` })));
+  };
+
   const endpoints: MapEndpoints = {
     wsUrl: async (mapId) => {
       const s = await getSession();
@@ -74,7 +87,7 @@ export function kandevAdapter(host: PluginHostApi): HostAdapter {
     setMapInUrl: (mapId) => host.navigate(mapId ? `${ROUTE}?map=${encodeURIComponent(mapId)}` : ROUTE, { replace: true }),
     // `session` without map_id returns a participant with an empty id; the real one arrives in `welcome`.
     participant: () => (session?.participant.id ? (session.participant as Participant) : null),
-    api: mapApi(call),
+    api: mapApi(call, blob),
     endpoints,
     ws: (url) => new WebSocket(url) as unknown as WsLike,
     assetUrl: (mapId, assetId) => {

@@ -7,16 +7,20 @@ import { h, React } from "../runtime";
 import { AvatarStack } from "./agent";
 import { AgentsDock } from "./dock";
 import { Canvas, type CanvasApi } from "./Canvas";
+import { CompileDialog } from "./CompileDialog";
+import { downloadDocsZip } from "./DocPanel";
 import { MapController } from "./controller";
 import { useStore } from "./hooks";
 import { Icon, ICONS } from "./icons";
 import { Inspector } from "./Inspector";
 import type { Command } from "./keys";
-import { agentMenuItems, NodeMenu } from "./NodeMenu";
+import { agentMenuItems, NodeMenu, quickMenuItems } from "./NodeMenu";
 import { Palette, type PaletteAction } from "./Palette";
 import { ShareControls } from "./ShareDialog";
 import { RunDialog } from "./RunDialog";
+import { needsYou as runNeedsYou } from "./RunActions";
 import type { RunKind } from "./runForm";
+import { suggestBranches } from "./suggest";
 
 function fontFamily(): string {
   const v = typeof document !== "undefined" ? getComputedStyle(document.documentElement).getPropertyValue("--font-sans").trim() : "";
@@ -42,6 +46,7 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
   const apiRef = React.useRef(null as CanvasApi | null);
   const [dialog, setDialog] = React.useState(null as { kind: RunKind; nodeId: string } | null);
   const [menu, setMenu] = React.useState(null as { nodeId: string; x: number; y: number } | null);
+  const [compileFor, setCompileFor] = React.useState(null as string | null);
 
   // ?node=<id> (links from a task panel) selects that node once it has loaded.
   const pendingNode = React.useRef(typeof location !== "undefined" ? new URLSearchParams(location.search).get("node") : null);
@@ -85,24 +90,49 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
     .sort((a, b) => Number(b.id === e.participant?.id) - Number(a.id === e.participant?.id) || Number(a.kind === "agent") - Number(b.kind === "agent"));
   const runs = [...e.runs.values()];
   const running = runs.filter((r) => r.status === "running" || r.status === "queued").length;
-  const needsYou = runs.filter((r) => r.status === "waiting" || r.status === "review").length;
+  const needsYou = runs.filter(runNeedsYou).length;
   const proposals = [...e.proposals.values()].filter((p) => p.status === "open" || p.status === "ready");
   const pendingItems = proposals.reduce((n, p) => n + p.items.filter((i) => i.status === "pending").length, 0);
 
-  const stub = (label: string) => () => host.toast(`${label} arrives in a later phase.`, "info");
   const openRun = (kind: RunKind, nodeId = ctl.selection ?? ctl.rootId) => {
     if (!nodeId) return;
     setMenu(null);
     setDialog({ kind, nodeId });
   };
   const selected = ctl.node(ctl.selection) ?? ctl.node(ctl.rootId);
+  const suggest = (nodeId = ctl.selection ?? ctl.rootId) => {
+    const n = ctl.node(nodeId);
+    setMenu(null);
+    if (!n) return;
+    if (n.kind === "doc") return host.toast("Suggest works on map nodes, not compiled docs.", "info");
+    if (!ctl.showGhosts) ctl.toggleGhosts();
+    suggestBranches({ api: host.api, toast: (m, k) => host.toast(m, k) }, mapId, n.id, n.title || "Untitled");
+  };
+  const openCompile = (nodeId = ctl.selection ?? ctl.rootId) => {
+    if (!nodeId) return;
+    setMenu(null);
+    setCompileFor(nodeId);
+  };
+  const openDock = (filter: "all" | "needs") => {
+    ctl.dockOpen = true;
+    ctl.dockFilter = filter;
+    ctl.bump();
+  };
+  const closeDock = () => {
+    ctl.dockOpen = false;
+    ctl.bump();
+  };
+  const hasDocs = [...ctl.view.nodes.values()].some((n) => n.kind === "doc" && !n.deleted);
   const actions: PaletteAction[] = [
     { id: "run", label: "Run agent on this node…", run: () => openRun("run") },
     { id: "swarm", label: "Swarm this node…", run: () => openRun("swarm") },
     { id: "explore", label: "Explore from here…", run: () => openRun("explore") },
     { id: "garden", label: "Garden the map…", run: () => openRun("garden", ctl.rootId) },
     ...(selected?.kind === "action" ? [{ id: "execute", label: "Execute this action…", run: () => openRun("execute") }] : []),
-    { id: "compile", label: "Compile branch to docs…", hint: "Later", run: stub("Compile") },
+    ...(selected?.kind !== "doc" ? [{ id: "suggest", label: "Suggest branches", run: () => suggest() }] : []),
+    { id: "compile", label: "Compile to docs…", run: () => openCompile() },
+    ...(hasDocs ? [{ id: "export", label: "Download compiled docs (zip)", run: () => downloadDocsZip(ctl, selected?.kind === "doc" ? selected.id : undefined) }] : []),
+    { id: "dock", label: ctl.dockOpen ? "Close agents dock" : "Open agents dock", run: () => (ctl.dockOpen ? closeDock() : openDock("all")) },
     { id: "fit", label: "Fit map to screen", hint: IS_MAC ? "⌘0" : "Ctrl 0", run: () => apiRef.current?.fit() },
     { id: "ghosts", label: ctl.showGhosts ? "Hide proposed changes" : "Show proposed changes", run: () => ctl.toggleGhosts() },
     { id: "inspector", label: ctl.inspectorOpen ? "Close inspector" : "Open inspector", hint: "⇧Enter", run: () => { ctl.inspectorOpen = !ctl.inspectorOpen; ctl.bump(); } },
@@ -125,7 +155,7 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
         <ConnChip state={ctl.connState} />
         <span className="mm-spacer" />
         {running || needsYou ? (
-          <button className={`mm-chip ${needsYou ? "mm-chip-waiting" : "mm-chip-running"}`} onClick={() => { ctl.dockOpen = true; ctl.bump(); }} title="Open agents dock">
+          <button className={`mm-chip ${needsYou ? "mm-chip-waiting" : "mm-chip-running"}`} onClick={() => openDock(needsYou ? "needs" : "all")} title={needsYou ? "Show the runs that need you" : "Open agents dock"} data-testid="mm-needs-you">
             {running ? `${running} agent${running > 1 ? "s" : ""} running` : ""}{running && needsYou ? " · " : ""}{needsYou ? `${needsYou} need${needsYou > 1 ? "" : "s"} you` : ""}
           </button>
         ) : null}
@@ -161,6 +191,12 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
       <div className="mm-body">
         <Canvas ctl={ctl} apiRef={apiRef} onCommand={onCommand} onNodeMenu={(nodeId, x, y) => setMenu({ nodeId, x, y })} />
         {ctl.inspectorOpen ? <Inspector ctl={ctl} onClose={() => { ctl.inspectorOpen = false; ctl.bump(); }} /> : null}
+        {ctl.dockOpen ? (
+          <AgentsDock ctl={ctl} onClose={closeDock} onReveal={(id) => {
+            ctl.select(id);
+            apiRef.current?.reveal(id);
+          }} />
+        ) : null}
       </div>
       {ctl.paletteOpen ? (
         <Palette ctl={ctl} actions={actions} onClose={closePalette} onPick={(id) => {
@@ -171,6 +207,7 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
       {menu && ctl.node(menu.nodeId) ? (
         <NodeMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={[
           agentMenuItems(ctl.node(menu.nodeId)!, (kind) => openRun(kind, kind === "garden" ? ctl.rootId : menu.nodeId)),
+          quickMenuItems(ctl.node(menu.nodeId)!, { suggest: () => suggest(menu.nodeId), compile: () => openCompile(menu.nodeId) }),
           [
             { id: "child", label: "Add child", run: () => apiRef.current?.command({ type: "addChild" }) },
             { id: "inspect", label: "Open inspector", run: () => { ctl.inspectorOpen = true; ctl.bump(); } },
@@ -180,6 +217,12 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
       {dialog ? (
         <RunDialog ctl={ctl} kind={dialog.kind} nodeId={dialog.nodeId} onClose={() => {
           setDialog(null);
+          apiRef.current?.focus();
+        }} />
+      ) : null}
+      {compileFor ? (
+        <CompileDialog ctl={ctl} nodeId={compileFor} onClose={() => {
+          setCompileFor(null);
           apiRef.current?.focus();
         }} />
       ) : null}

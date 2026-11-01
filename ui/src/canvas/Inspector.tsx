@@ -1,11 +1,11 @@
-// Minimal inspector: title, markdown body, kind, tags, read-only sources and
-// assets, and the pending proposal items on this node. The richer inspector
-// (live output, replay) is Phase 2b.
+// Inspector: title, markdown body, kind, tags, read-only sources and assets,
+// agents on the node, compiled-doc details, and the pending proposal items.
 import { NODE_KINDS, type NodeKind } from "../contract";
 import { h, React } from "../runtime";
 import { AvatarStack, HarnessBadge, ringFor } from "./agent";
 import type { MapController } from "./controller";
 import { Icon, ICONS, KIND_LABEL, KindIcon } from "./icons";
+import { DocPanel } from "./DocPanel";
 import { renderMarkdown } from "./markdown";
 import { RunActions } from "./RunActions";
 
@@ -123,9 +123,10 @@ export function Inspector(props: { ctl: MapController; onClose: () => void }) {
               }
             }} />
           ) : node.body_md ? (
-            <div className="mm-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(node.body_md) }} />
+            <div className={`mm-md${node.kind === "doc" ? " mm-md-doc" : ""}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(node.body_md) }} />
           ) : <p className="mm-muted">No notes yet.</p>}
         </div>
+        {node.kind === "doc" ? <DocPanel ctl={ctl} node={node} /> : null}
         {node.question ? (
           <div className="mm-field">
             <span>Question</span>

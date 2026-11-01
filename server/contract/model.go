@@ -128,8 +128,9 @@ func (q *Question) Open() bool { return q != nil && q.Answer == "" }
 
 // DocMeta is the compile metadata of a kind=doc node.
 type DocMeta struct {
-	// Path is relative to the export root, e.g. "pricing/index.md". The
-	// consolidated single doc uses "<slug>.md" and the root index "index.md".
+	// Path is relative to the compile's "<slug>/" folder, e.g.
+	// "pricing/index.md"; the root index is "index.md". The consolidated
+	// single doc is "<slug>.md" and sits next to that folder.
 	Path       string    `json:"path"`
 	SourceIDs  []string  `json:"source_ids,omitempty"` // nodes this doc was compiled from
 	RunID      string    `json:"run_id,omitempty"`

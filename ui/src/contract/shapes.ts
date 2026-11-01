@@ -261,14 +261,21 @@ export const SwarmRequestShape = obj("SwarmRequest", {
 }, { goal: str(), mode: oneOf(RUN_MODES), budget: BudgetShape });
 export type SwarmRequest = Infer<typeof SwarmRequestShape>;
 
-export const CompileRequestShape = obj("CompileRequest", { node_id: id }, { profile_id: str(), slug: str(), target: oneOf(["repo", "dir"]) });
+export const CompileRequestShape = obj("CompileRequest", { node_id: id }, {
+  profile_id: str(), slug: str(), target: oneOf(["repo", "dir"]), mode: oneOf(RUN_MODES), repo_id: str(),
+});
 export type CompileRequest = Infer<typeof CompileRequestShape>;
 
 export const StartRunsResponseShape = obj("StartRunsResponse", { runs: arr(RunShape) });
-export const SuggestRequestShape = obj("SuggestRequest", { node_id: id }, { count: int });
+export const SuggestRequestShape = obj("SuggestRequest", { node_id: id }, { count: int, profile_id: str() });
+export type SuggestRequest = Infer<typeof SuggestRequestShape>;
+export const SUGGEST_STATUSES = ["running", "done", "failed"] as const;
 export const SuggestResponseShape = obj("SuggestResponse", {
+  status: oneOf(SUGGEST_STATUSES),
+  job_id: id,
   suggestions: arr(obj("Suggestion", { title: str(), kind: oneOf(NODE_KINDS) }, { body: str() })),
-});
+}, { proposal_id: id, node_ids: arr(id), error: str() });
+export type SuggestResponse = Infer<typeof SuggestResponseShape>;
 export const ReviewProposalRequestShape = obj("ReviewProposalRequest", {}, {
   accept: arr(id), reject: arr(id), accept_all: bool, reject_all: bool,
 });

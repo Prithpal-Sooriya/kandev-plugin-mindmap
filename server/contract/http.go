@@ -87,8 +87,11 @@ type CompileRequest struct {
 	ProfileID string `json:"profile_id,omitempty"`
 	Slug      string `json:"slug,omitempty"` // default: slugified node title
 	// Target "repo" writes docs/mindmaps/<slug> on the compile task's branch;
-	// "dir" writes to MapSettings.ExportDir (default ~/Kandev/mindmaps).
-	Target string `json:"target,omitempty"`
+	// "dir" writes to the export_dir setting (default ~/Kandev/mindmaps).
+	// Default: "repo" when the map (or RepoID) has a repository, else "dir".
+	Target string  `json:"target,omitempty"`
+	Mode   RunMode `json:"mode,omitempty"`
+	RepoID string  `json:"repo_id,omitempty"` // default: the map's repo_id
 }
 
 // StartRunsResponse lists runs created by run/swarm/compile requests.
@@ -98,13 +101,32 @@ type StartRunsResponse struct {
 
 // SuggestRequest asks a one-shot utility agent for child ideas.
 type SuggestRequest struct {
-	NodeID string `json:"node_id"`
-	Count  int    `json:"count,omitempty"` // default 5, max 12
+	NodeID    string `json:"node_id"`
+	Count     int    `json:"count,omitempty"`      // default 5, max 12
+	ProfileID string `json:"profile_id,omitempty"` // default: Kandev's default utility profile
 }
 
+// SuggestResponse is the answer of POST .../suggest (200 when done, 202
+// while the utility agent is still working) and of GET .../suggest/<job>.
+// The suggestions are proposed as `suggested`-tagged child nodes in
+// ProposalID (ghosts the user accepts or rejects).
 type SuggestResponse struct {
-	Suggestions []Suggestion `json:"suggestions"`
+	Status      SuggestStatus `json:"status"`
+	JobID       string        `json:"job_id"` // the suggest run's id
+	ProposalID  string        `json:"proposal_id,omitempty"`
+	NodeIDs     []string      `json:"node_ids,omitempty"` // proposed node ids
+	Suggestions []Suggestion  `json:"suggestions"`
+	Error       string        `json:"error,omitempty"`
 }
+
+// SuggestStatus is the state of a suggest job.
+type SuggestStatus string
+
+const (
+	SuggestRunning SuggestStatus = "running"
+	SuggestDone    SuggestStatus = "done"
+	SuggestFailed  SuggestStatus = "failed"
+)
 
 type Suggestion struct {
 	Title string   `json:"title"`

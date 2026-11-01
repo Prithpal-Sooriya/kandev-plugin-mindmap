@@ -148,7 +148,7 @@ describe("run API routes", () => {
       if (path.endsWith("/swarms") || path.endsWith("/runs")) return { runs: [] } as T;
       if (path === "/runs/tasks") return { task_ids: ["t1"] } as T;
       return undefined as T;
-    });
+    }, async () => new Blob());
     await api.startSwarm("mp_1", { node_id: "nd_1", agents: [{ lens: "skeptic" }] });
     await api.stopRun("run_1");
     await api.messageRun("run_1", "Focus");

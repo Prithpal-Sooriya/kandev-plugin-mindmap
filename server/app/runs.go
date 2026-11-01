@@ -21,6 +21,10 @@ type RunSpec struct {
 	// CapsChecked skips CheckRunCaps when the caller already checked it for
 	// a batch (a swarm checks once for all its lens runs).
 	CapsChecked bool
+	// NoHold launches a coordinator's child without the guest-approval hold:
+	// the host already approved the coordinator (later compile waves and
+	// the synthesis run).
+	NoHold bool
 }
 
 // StartRun creates a run (row, agent participant, run token, proposal,
@@ -39,6 +43,7 @@ func (s *Service) StartRun(ctx context.Context, spec RunSpec) (store.RunRecord, 
 	if err != nil {
 		return store.RunRecord{}, err
 	}
+	hold = hold && !spec.NoHold
 	if !spec.CapsChecked && !hold {
 		if err := s.CheckRunCaps(spec.MapID, spec.Budget, 1); err != nil {
 			return store.RunRecord{}, err
@@ -299,6 +304,7 @@ func (s *Service) promptInput(r store.RunRecord, n contract.Node, token string) 
 	if r.Transport != contract.TransportMCP && s.Outline != nil {
 		in.Outline = s.Outline(r)
 	}
+	in.Brief = s.compileBrief(r)
 	return in
 }
 
@@ -404,8 +410,14 @@ type SwarmSpec struct {
 	StartedBy     string
 }
 
+// isCoordinator reports whether a run is a coordinator with no agent of its
+// own: a swarm's (its lens runs have a lens) or a compile's (its section
+// runs have a parent).
 func isCoordinator(r store.RunRecord) bool {
-	return r.Template == contract.TemplateSwarm && r.Lens == "" && r.TaskID == ""
+	if r.TaskID != "" || r.Lens != "" {
+		return false
+	}
+	return r.Template == contract.TemplateSwarm || r.Template == contract.TemplateCompile && r.ParentRunID == ""
 }
 
 // StartSwarm creates a coordinator run on the node (no task: it owns the
@@ -565,6 +577,10 @@ func LensTitle(l contract.Lens) string {
 func (s *Service) syncCoordinator(runID string) {
 	coord, err := s.Store.GetRun(runID)
 	if err != nil || !isCoordinator(coord) {
+		return
+	}
+	if coord.Template == contract.TemplateCompile {
+		s.syncCompile(coord.ID)
 		return
 	}
 	kids, err := s.Store.ChildRuns(coord.ID)

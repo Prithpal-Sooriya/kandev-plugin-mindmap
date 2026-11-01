@@ -1,5 +1,5 @@
 // Per-run actions in the inspector: stop, message the agent, open its task.
-import { ContractError, type Run } from "../contract";
+import { ContractError, type Participant, type Run } from "../contract";
 import { h, React } from "../runtime";
 import type { MapController } from "./controller";
 
@@ -7,6 +7,28 @@ const ACTIVE = new Set(["queued", "running", "waiting", "review"]);
 
 export function canStop(run: Pick<Run, "status">): boolean {
   return ACTIVE.has(run.status);
+}
+
+/** A guest run held for the host's approval; only the host sees the button. */
+export function canApprove(run: Pick<Run, "status" | "waiting_reason">, me: Pick<Participant, "is_host"> | null | undefined): boolean {
+  return run.status === "waiting" && run.waiting_reason === "approval" && !!me?.is_host;
+}
+
+/** Runs that wait on a person: a question, an approval or a review. */
+export function needsYou(run: Pick<Run, "status">): boolean {
+  return run.status === "waiting" || run.status === "review";
+}
+
+/** Approves a held run (a coordinator approves all its held agents) and reports it. */
+export async function approveRun(ctl: MapController, run: Pick<Run, "id">): Promise<void> {
+  try {
+    const runs = await ctl.host.api.approveRun(run.id);
+    const failed = runs.filter((r) => r.status === "failed");
+    if (failed.length) ctl.host.toast(`Approved, but ${failed.length} agent${failed.length > 1 ? "s" : ""} could not start: ${failed[0]!.error ?? "launch failed"}`, "error");
+    else ctl.host.toast(runs.length > 1 ? `Approved ${runs.length} agents.` : "Approved. The agent is starting.", "success");
+  } catch (e) {
+    ctl.host.toast(e instanceof ContractError ? e.message : "Could not approve the run.", "error");
+  }
 }
 
 /** Coordinator runs (swarms) have no task; messages fan out to their agents. */
@@ -41,6 +63,13 @@ export function RunActions(props: { ctl: MapController; run: Run }) {
   return (
     <div className="mm-runact">
       <div className="mm-row">
+        {canApprove(run, ctl.engine.participant) ? (
+          <button type="button" className="mm-btn mm-btn-xs mm-btn-primary" disabled={busy} onClick={async () => {
+            setBusy(true);
+            await approveRun(ctl, run);
+            setBusy(false);
+          }} data-testid="mm-run-approve">Approve</button>
+        ) : null}
         {canStop(run) ? <button type="button" className="mm-btn mm-btn-xs" disabled={busy} onClick={stop} data-testid="mm-run-stop">Stop</button> : null}
         {canMessage(run) ? <button type="button" className={`mm-btn mm-btn-xs${composing ? " mm-btn-on" : ""}`} onClick={() => setComposing(!composing)}>Message</button> : null}
         {run.task_id && ctl.host.kind === "kandev" ? (

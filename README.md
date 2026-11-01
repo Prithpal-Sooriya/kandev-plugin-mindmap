@@ -2,8 +2,8 @@
 
 An agentic, multiplayer mind map for [Kandev](https://github.com/kdlbs/kandev).
 
-Status: Phase 1a (backend core), 1b (canvas UI) and 2a (agent runs). See [docs/protocol.md](docs/protocol.md) for
-the wire contract (§13 and §14 list what the backend implements so far) and
+Status: Phase 1a (backend core), 1b (canvas UI), 2a (agent runs) and 2c (compile, export, suggest). See
+[docs/protocol.md](docs/protocol.md) for the wire contract (§13 to §15 list what the backend implements so far) and
 [docs/spike-findings.md](docs/spike-findings.md) for what the Phase 0 spike verified.
 
 ## Agent runs
@@ -23,6 +23,19 @@ the `mindmap_*` bridge tools, with `mindmap-patch` blocks as the fallback. The i
 and open its task; question nodes from `ask_human` can be answered inline; each run's Kandev task gets a
 **Mind Map** panel with its branch and a link back to the map. Set a default profile in the plugin config
 (`agent_profile`) or per map (`settings.default_profile_id`).
+
+## Compile to docs, export and suggest
+
+- **Compile to docs…** (⌘K or right-click) turns a branch or the whole map into markdown. One agent per top-level
+  branch writes its section in parallel (big branches get sub-docs), then one agent writes the overview and a
+  single consolidated doc. The docs appear in the map as doc nodes under the branch, readable in the inspector.
+- Maps with a repository get the files under `docs/mindmaps/` on the synthesis task's branch. Other maps are
+  written to the export folder (plugin config `export_dir`, default `~/Kandev/mindmaps`). Any doc tree can also be
+  downloaded as a zip from the inspector or the palette.
+- **Suggest branches** asks Kandev's utility agent for a few child ideas. They arrive as proposed (ghost) nodes to
+  accept or reject.
+- With guest run approval on, guest compiles wait for the host: **Approve** appears on the run in the agents dock
+  (header "needs you" chip) and in the inspector.
 
 ## Contract layout
 
@@ -51,7 +64,7 @@ in `.kandev-sdk-ref` (the SDK is not published as its own module yet).
 ```sh
 make test          # go test -race, tsc, vitest
 make package-host  # builds kandev-plugin-mindmap-<version>.tar.gz for this platform
-curl -F package=@kandev-plugin-mindmap-0.2.0.tar.gz http://127.0.0.1:38430/api/plugins/install
+curl -F package=@kandev-plugin-mindmap-0.3.0.tar.gz http://127.0.0.1:38430/api/plugins/install
 ```
 
 UI development without Kandev or the Go backend:

@@ -106,6 +106,12 @@ type Service struct {
 	// OnTaskBound is called once a run's task id is recorded, so events that
 	// arrived before it can be replayed.
 	OnTaskBound func(taskID string)
+	// Suggest runs a one-shot utility completion (Host.InvokeUtilityAgent).
+	// Quick suggest is unavailable when nil.
+	Suggest Suggester
+	// ExportDir is the plugin config's export_dir ("" for the default
+	// ~/Kandev/mindmaps).
+	ExportDir func(ctx context.Context) string
 
 	// submitMu orders commit+broadcast so every client sees ops in rev
 	// order and before its own ack.
@@ -113,6 +119,10 @@ type Service struct {
 	runMu     sync.Mutex
 	heldMu    sync.Mutex
 	heldRepos map[string]string // run id -> repo of runs held for approval
+
+	compileMu    sync.Mutex
+	compileBusy  map[string]bool // coordinator id -> a goroutine is stepping it
+	compileDirty map[string]bool // coordinator id -> step again when done
 
 	mu         sync.Mutex
 	port       int

@@ -3,7 +3,7 @@
 // that path, so the same build works on loopback and through the tunnel.
 import { parseToken, type Participant } from "../contract";
 import type { HostAdapter, Theme, ToastKind } from "../host/adapter";
-import { jsonInit, mapApi, readJson } from "../host/http";
+import { jsonInit, mapApi, readBlob, readJson } from "../host/http";
 import type { MapEndpoints, WsLike } from "../transport/connection";
 
 export interface Toast {
@@ -53,6 +53,9 @@ export function standaloneAdapter(loc: Location = location): { adapter: HostAdap
 
   const call = async <T>(method: string, path: string, body?: unknown): Promise<T> =>
     readJson<T>(await fetch(`${base}/api${path}`, { ...jsonInit(method, body), credentials: "same-origin" }));
+
+  const blob = async (path: string): Promise<Blob> =>
+    readBlob(await fetch(`${base}/api${path}`, { headers: jsonInit("GET").headers, credentials: "same-origin" }));
 
   const endpoints: MapEndpoints = {
     wsUrl: async (mapId) => `${base.replace(/^http/, "ws")}/ws?map_id=${encodeURIComponent(mapId)}`,
@@ -124,7 +127,7 @@ export function standaloneAdapter(loc: Location = location): { adapter: HostAdap
           }
         }
       : undefined,
-    api: mapApi(call),
+    api: mapApi(call, blob),
     endpoints,
     ws: (url) => new WebSocket(url) as unknown as WsLike,
     assetUrl: async (mapId, assetId) => `${base}/assets/${encodeURIComponent(assetId)}?map_id=${encodeURIComponent(mapId)}`,

@@ -21,6 +21,14 @@ export function agentMenuItems(node: Pick<MapNode, "kind">, open: (kind: RunKind
   ];
 }
 
+/** Quick suggest and compile; suggest does not apply to compiled docs. */
+export function quickMenuItems(node: Pick<MapNode, "kind">, actions: { suggest: () => void; compile: () => void }): NodeMenuItem[] {
+  return [
+    { id: "suggest", label: "Suggest branches", disabled: node.kind === "doc", run: actions.suggest },
+    { id: "compile", label: "Compile to docs…", run: actions.compile },
+  ];
+}
+
 export function NodeMenu(props: { x: number; y: number; items: NodeMenuItem[][]; onClose: () => void }) {
   const ref = React.useRef(null as HTMLDivElement | null);
   const [pos, setPos] = React.useState({ x: props.x, y: props.y });

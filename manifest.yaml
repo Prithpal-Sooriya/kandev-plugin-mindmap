@@ -1,6 +1,6 @@
 id: "kandev-plugin-mindmap"
 api_version: 1
-version: "0.2.0"
+version: "0.3.0"
 display_name: "Mind Map"
 description: "An agentic, multiplayer mind map: you and your agents branch out, research, reorganise and compile docs together."
 author: "Prithpal-Sooriya"
@@ -1066,6 +1066,10 @@ config_schema:
       format: agent-profile
       title: "Default agent profile"
       description: "Agent profile used for mind map runs. Leave empty to choose per run."
+    export_dir:
+      type: string
+      title: "Export folder"
+      description: "Where compiled docs are written for maps without a repository. Default: ~/Kandev/mindmaps"
 
 ui:
   bundle: "/ui/bundle.js"

@@ -171,14 +171,12 @@ func (s *Server) routes() *http.ServeMux {
 	m("GET /m/{token}/api/maps/{map}/audit", s.audit)
 	m("GET /m/{token}/api/settings/share", s.getShareSettings)
 	m("PUT /m/{token}/api/settings/share", s.putShareSettings)
-	for _, p := range []string{
-		"POST /m/{token}/api/maps/{map}/compile", "POST /m/{token}/api/maps/{map}/suggest",
-		"GET /m/{token}/api/maps/{map}/export.zip",
-	} {
-		m(p, func(w http.ResponseWriter, _ *http.Request, _ *principal) {
-			writeErr(w, contract.Errf(contract.ErrNotImplemented, "not built yet (Phase 2)"))
-		})
-	}
+	m("POST /m/{token}/api/maps/{map}/compile", s.startCompile)
+	m("POST /m/{token}/api/maps/{map}/suggest", s.startSuggest)
+	m("GET /m/{token}/api/maps/{map}/suggest/{job}", s.suggestJob)
+	m("GET /m/{token}/api/maps/{map}/docs", s.docTrees)
+	m("GET /m/{token}/api/maps/{map}/export.zip", s.exportZip)
+	m("POST /m/{token}/api/maps/{map}/export", s.exportDisk)
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE"} {
 		m(method+" /m/{token}/api/{rest...}", func(w http.ResponseWriter, _ *http.Request, _ *principal) {
 			writeErr(w, contract.Errf(contract.ErrNotFound, "no such route"))

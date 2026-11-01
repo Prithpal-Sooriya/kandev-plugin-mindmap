@@ -71,6 +71,8 @@ func (p *mindmapPlugin) init() error {
 	p.svc.Profiles = p.cachedProfiles
 	p.svc.DefaultProfile = p.defaultProfile
 	p.svc.OnTaskBound = p.onTaskBound
+	p.svc.Suggest = p.invokeUtility
+	p.svc.ExportDir = p.configExportDir
 	p.tools, p.impl = tools.NewDispatcher(p.svc)
 	p.web = web.New(p.svc, p.tools)
 	p.web.Profiles = p.cachedProfiles
