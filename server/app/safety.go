@@ -21,7 +21,15 @@ type StopAllRuns interface {
 // calls it. Phase 2a must call it too for any launch path that does not go
 // through StartRun. requested may be nil (inherit the map default). extra is
 // how many runs are about to start (1 for a single run, len(agents) for a swarm).
+// Slots reserved by starts still in flight count as active. A check alone
+// does not hold a slot: launch paths reserve with reserveRunSlots.
 func (s *Service) CheckRunCaps(mapID string, requested *contract.Budget, extra int) error {
+	s.capsMu.Lock()
+	defer s.capsMu.Unlock()
+	return s.checkRunCapsLocked(mapID, requested, extra)
+}
+
+func (s *Service) checkRunCapsLocked(mapID string, requested *contract.Budget, extra int) error {
 	m, err := s.Store.GetMap(mapID)
 	if err != nil {
 		return err
@@ -34,7 +42,57 @@ func (s *Service) CheckRunCaps(mapID string, requested *contract.Budget, extra i
 	if err != nil {
 		return err
 	}
-	return share.CheckRunCaps(active, extra, resolveBudget(requested, m.Settings.DefaultBudget), caps)
+	return share.CheckRunCaps(active+s.pendingRuns[mapID], extra, resolveBudget(requested, m.Settings.DefaultBudget), caps)
+}
+
+// runSlots is a concurrency reservation: n runs that passed the cap check
+// and whose rows the store does not count yet. Checking and reserving under
+// capsMu makes parallel starts on a map unable to pass the same free slot.
+// A nil *runSlots is a no-op.
+type runSlots struct {
+	s     *Service
+	mapID string
+	n     int
+}
+
+// reserveRunSlots checks the caps for n more runs and reserves them.
+// Release what is not used with release.
+func (s *Service) reserveRunSlots(mapID string, requested *contract.Budget, n int) (*runSlots, error) {
+	n = max(n, 1)
+	s.capsMu.Lock()
+	defer s.capsMu.Unlock()
+	if err := s.checkRunCapsLocked(mapID, requested, n); err != nil {
+		return nil, err
+	}
+	if s.pendingRuns == nil {
+		s.pendingRuns = map[string]int{}
+	}
+	s.pendingRuns[mapID] += n
+	return &runSlots{s: s, mapID: mapID, n: n}, nil
+}
+
+// take hands one slot to a run the store now counts as active (its row was
+// inserted, or it left waiting(approval)).
+func (r *runSlots) take() { r.give(1) }
+
+// release returns every slot not taken.
+func (r *runSlots) release() {
+	if r != nil {
+		r.give(r.n)
+	}
+}
+
+func (r *runSlots) give(k int) {
+	if r == nil {
+		return
+	}
+	r.s.capsMu.Lock()
+	defer r.s.capsMu.Unlock()
+	k = min(k, r.n)
+	r.n -= k
+	if r.s.pendingRuns[r.mapID] -= k; r.s.pendingRuns[r.mapID] <= 0 {
+		delete(r.s.pendingRuns, r.mapID)
+	}
 }
 
 // runCaps is the map ceiling. A shared map with nothing set by the host

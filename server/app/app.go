@@ -120,6 +120,12 @@ type Service struct {
 	heldMu    sync.Mutex
 	heldRepos map[string]string // run id -> repo of runs held for approval
 
+	capsMu      sync.Mutex
+	pendingRuns map[string]int // map id -> run slots reserved but not yet inserted
+
+	budgetMu sync.Mutex
+	budgets  map[string]*budgetClock // run id -> time used in its budget window
+
 	compileMu    sync.Mutex
 	compileBusy  map[string]bool // coordinator id -> a goroutine is stepping it
 	compileDirty map[string]bool // coordinator id -> step again when done

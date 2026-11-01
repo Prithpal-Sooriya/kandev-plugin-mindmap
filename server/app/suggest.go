@@ -66,9 +66,11 @@ func (s *Service) StartSuggest(ctx context.Context, mapID, nodeID string, count 
 	if err != nil {
 		return store.RunRecord{}, nil, err
 	}
-	if err := s.CheckRunCaps(mapID, nr.Budget, 1); err != nil {
+	slots, err := s.reserveRunSlots(mapID, nr.Budget, 1)
+	if err != nil {
 		return store.RunRecord{}, nil, err
 	}
+	defer slots.release()
 	nr.NodeID, nr.Template, nr.Mode, nr.Harness, nr.Transport = nodeID, contract.TemplateSuggest, contract.ModePropose, contract.HarnessOther, contract.TransportMCP
 	nr.Goal = fmt.Sprintf("Suggest %d child branches", count)
 	nr.ProfileName = "default utility agent"
@@ -90,6 +92,7 @@ func (s *Service) StartSuggest(ctx context.Context, mapID, nodeID string, count 
 	if err != nil {
 		return run, nil, err
 	}
+	slots.take()
 	_ = s.Store.RevokeRunTokens(run.ID) // the utility agent has no tools
 	run, _ = s.UpdateRun(run.ID, func(r *store.RunRecord) bool {
 		r.Status = contract.RunRunning
@@ -147,9 +150,14 @@ func (s *Service) runSuggest(run store.RunRecord, node contract.Node, count int)
 				Tags: []string{SuggestTag}}}}
 	}
 	actor := contract.Actor{ParticipantID: run.ParticipantID, RunID: run.ID}
-	if _, _, err := s.Propose(run.ProposalID, ops, actor); err != nil {
+	suggestBeforePropose(run.ID)
+	proposed, err := s.proposeUnlessStopped(run.ID, run.ProposalID, ops, actor)
+	if err != nil {
 		s.failSuggest(run, "could not propose the suggestions: "+err.Error())
 		return
+	}
+	if !proposed {
+		return // stopped meanwhile
 	}
 	summary := fmt.Sprintf("Suggested %d branch%s for \"%s\"", len(items), map[bool]string{true: "", false: "es"}[len(items) == 1], node.Title)
 	if err := s.Store.SetProposalReady(run.ProposalID, summary); err == nil {
@@ -169,6 +177,36 @@ func (s *Service) runSuggest(run store.RunRecord, node contract.Node, count int)
 	}
 	s.Activity(contract.ActivityEvent{MapID: run.MapID, Type: contract.ActivityProposalCreated, Actor: actor, Count: len(items),
 		Summary: "Quick suggest proposed " + strings.TrimPrefix(summary, "Suggested "), NodeIDs: []string{node.ID}})
+}
+
+// suggestBeforePropose is a test hook: it runs after the utility agent
+// replied, just before the suggestions are proposed.
+var suggestBeforePropose = func(runID string) {}
+
+// proposeUnlessStopped stores ops in a suggest run's proposal unless the run
+// was stopped (or otherwise ended). The check and the write hold runMu, which
+// StopRun's status write also takes, so a stop is either seen here or lands
+// after the proposal exists.
+func (s *Service) proposeUnlessStopped(runID, proposalID string, ops []contract.Op, actor contract.Actor) (bool, error) {
+	s.runMu.Lock()
+	cur, err := s.Store.GetRun(runID)
+	if err != nil {
+		s.runMu.Unlock()
+		return false, err
+	}
+	if cur.StopRequested || cur.Status.Terminal() {
+		s.runMu.Unlock()
+		return false, nil
+	}
+	_, err = s.Store.Propose(proposalID, ops, actor)
+	s.runMu.Unlock()
+	if err != nil {
+		return false, err
+	}
+	if p, err := s.Store.GetProposal(proposalID); err == nil {
+		s.Hub.Publish(p.MapID, contract.Message{Type: contract.MsgProposal, Payload: &contract.ProposalPayload{Proposal: p}})
+	}
+	return true, nil
 }
 
 func (s *Service) failSuggest(run store.RunRecord, msg string) {

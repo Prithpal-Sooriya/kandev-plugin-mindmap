@@ -21,6 +21,9 @@ type RunSpec struct {
 	// CapsChecked skips CheckRunCaps when the caller already checked it for
 	// a batch (a swarm checks once for all its lens runs).
 	CapsChecked bool
+	// Slots is the caller's reservation for a batch checked with
+	// CapsChecked; the run takes one slot once its row is inserted.
+	Slots *runSlots
 	// NoHold launches a coordinator's child without the guest-approval hold:
 	// the host already approved the coordinator (later compile waves and
 	// the synthesis run).
@@ -44,10 +47,14 @@ func (s *Service) StartRun(ctx context.Context, spec RunSpec) (store.RunRecord, 
 		return store.RunRecord{}, err
 	}
 	hold = hold && !spec.NoHold
+	slots := spec.Slots
 	if !spec.CapsChecked && !hold {
-		if err := s.CheckRunCaps(spec.MapID, spec.Budget, 1); err != nil {
+		own, err := s.reserveRunSlots(spec.MapID, spec.Budget, 1)
+		if err != nil {
 			return store.RunRecord{}, err
 		}
+		defer own.release()
+		slots = own
 	}
 	if err := s.resolveProfile(ctx, &spec.NewRun); err != nil {
 		return store.RunRecord{}, err
@@ -61,6 +68,9 @@ func (s *Service) StartRun(ctx context.Context, spec RunSpec) (store.RunRecord, 
 	run, token, err := s.Store.CreateRun(spec.NewRun, s.Port())
 	if err != nil {
 		return run, err
+	}
+	if !hold {
+		slots.take()
 	}
 	node, _ := s.Store.Node(run.MapID, run.NodeID)
 	if hold {
@@ -123,11 +133,18 @@ func (s *Service) stopIfCoordinatorStopped(ctx context.Context, coordID string, 
 
 // launch creates the run's Kandev task and records it. The task is created
 // on a context detached from the caller's: an HTTP request (the api webhook
-// is cut at about 25 s) must not cancel a launch half way.
+// is cut at about 25 s) must not cancel a launch half way. A run stopped
+// before the launch gets no task; one stopped while its task was being
+// created is stopped again once the task is known.
 func (s *Service) launch(ctx context.Context, run store.RunRecord, node contract.Node, token, repoID string) (store.RunRecord, error) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), LaunchTimeout)
+	if cur, err := s.Store.GetRun(run.ID); err == nil && cur.StopRequested {
+		_ = s.Store.RevokeRunTokens(cur.ID)
+		s.releaseClaims(cur)
+		return cur, nil
+	}
+	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), LaunchTimeout)
 	defer cancel()
-	res, err := s.Launcher.Launch(ctx, LaunchRequest{
+	res, err := s.Launcher.Launch(lctx, LaunchRequest{
 		Run:         run,
 		Title:       taskTitle(run, node),
 		Description: taskDescription(run, node, s.mapTitle(run.MapID)),
@@ -138,6 +155,9 @@ func (s *Service) launch(ctx context.Context, run store.RunRecord, node contract
 	if err != nil {
 		_ = s.Store.RevokeRunTokens(run.ID)
 		run, _ = s.UpdateRun(run.ID, func(r *store.RunRecord) bool {
+			if r.StopRequested {
+				return false
+			}
 			r.Status, r.WaitingReason, r.Error = contract.RunFailed, "", "launch failed: "+err.Error()
 			return true
 		})
@@ -145,15 +165,38 @@ func (s *Service) launch(ctx context.Context, run store.RunRecord, node contract
 		s.releaseClaims(run)
 		return run, contract.Errf(contract.ErrUnavailable, "could not launch the agent task: %v", err)
 	}
-	if res.TaskID != "" {
-		if err := s.Store.SetRunTask(run.ID, res.TaskID, res.SessionID); err != nil {
-			return run, err
+	// The task is bound in the same serialised update that reads
+	// StopRequested, so a concurrent StopRun either sees the task (and
+	// messages it) or is seen here.
+	stopped := false
+	run, err = s.UpdateRun(run.ID, func(r *store.RunRecord) bool {
+		stopped = r.StopRequested
+		if res.TaskID == "" && (!stopped || r.Status.Terminal()) {
+			return false
 		}
-		run.TaskID, run.SessionID = res.TaskID, res.SessionID
-		s.PublishRun(run)
-		if s.OnTaskBound != nil {
-			s.OnTaskBound(res.TaskID)
+		if res.TaskID != "" {
+			r.TaskID = res.TaskID
+			if res.SessionID != "" {
+				r.SessionID = res.SessionID
+			}
 		}
+		if stopped && !r.Status.Terminal() {
+			r.Status, r.WaitingReason = contract.RunStopped, ""
+		}
+		return true
+	})
+	if err != nil {
+		return run, err
+	}
+	if stopped {
+		_ = s.Store.RevokeRunTokens(run.ID)
+		s.SetRunNodeStatus(run)
+		s.releaseClaims(run)
+		s.sendStop(ctx, run, "")
+		return run, nil
+	}
+	if res.TaskID != "" && s.OnTaskBound != nil {
+		s.OnTaskBound(res.TaskID)
 	}
 	return run, nil
 }
@@ -199,17 +242,20 @@ func (s *Service) ApproveRun(ctx context.Context, runID string) ([]store.RunReco
 				held = append(held, k)
 			}
 		}
+		var slots *runSlots
 		if len(held) > 0 {
-			if err := s.CheckRunCaps(run.MapID, &held[0].Budget, len(held)); err != nil {
+			slots, err = s.reserveRunSlots(run.MapID, &held[0].Budget, len(held))
+			if err != nil {
 				return nil, err
 			}
+			defer slots.release()
 		}
 		var out []store.RunRecord
 		for _, k := range held {
 			if s.coordinatorStopped(run.ID) {
 				break
 			}
-			r, err := s.ApproveRun(ctx, k.ID)
+			r, err := s.approveOne(ctx, k, slots)
 			if err != nil && len(r) == 0 {
 				return out, err
 			}
@@ -223,14 +269,25 @@ func (s *Service) ApproveRun(ctx context.Context, runID string) ([]store.RunReco
 		}
 		return out, nil
 	}
+	return s.approveOne(ctx, run, nil)
+}
+
+// approveOne launches one held run, taking a slot from slots (a
+// coordinator's reservation for all its held runs) or reserving its own.
+func (s *Service) approveOne(ctx context.Context, run store.RunRecord, slots *runSlots) ([]store.RunRecord, error) {
 	if run.Status != contract.RunWaiting || run.WaitingReason != contract.WaitingApproval || run.TaskID != "" {
 		return nil, contract.Errf(contract.ErrConflict, "this run is not waiting for approval")
 	}
 	if run.ParentRunID != "" && s.coordinatorStopped(run.ParentRunID) {
 		return nil, contract.Errf(contract.ErrConflict, "this run's swarm or compile was stopped")
 	}
-	if err := s.CheckRunCaps(run.MapID, &run.Budget, 1); err != nil {
-		return nil, err
+	if slots == nil {
+		own, err := s.reserveRunSlots(run.MapID, &run.Budget, 1)
+		if err != nil {
+			return nil, err
+		}
+		defer own.release()
+		slots = own
 	}
 	// Only the caller whose write moved the run out of waiting(approval)
 	// launches it; a concurrent approval reads the winner's queued row and
@@ -248,6 +305,7 @@ func (s *Service) ApproveRun(ctx context.Context, runID string) ([]store.RunReco
 	if !saved {
 		return nil, contract.Errf(contract.ErrConflict, "this run is not waiting for approval")
 	}
+	slots.take()
 	if run.ParentRunID != "" {
 		s.syncCoordinator(run.ParentRunID)
 	}
@@ -534,10 +592,13 @@ func (s *Service) StartSwarm(ctx context.Context, spec SwarmSpec) ([]store.RunRe
 	if err != nil {
 		return nil, err
 	}
+	var slots *runSlots
 	if !hold {
-		if err := s.CheckRunCaps(spec.MapID, &per, n); err != nil {
+		slots, err = s.reserveRunSlots(spec.MapID, &per, n)
+		if err != nil {
 			return nil, err
 		}
+		defer slots.release()
 	}
 	pool := contract.Budget{MaxDepth: per.MaxDepth + 1, MaxNodes: per.MaxNodes * n, MaxSubagents: n * (1 + per.MaxSubagents), MaxMinutes: per.MaxMinutes}
 	swarmID := store.NewID("sw")
@@ -573,7 +634,7 @@ func (s *Service) StartSwarm(ctx context.Context, spec SwarmSpec) ([]store.RunRe
 		b := per
 		r, err := s.StartRun(ctx, RunSpec{NewRun: store.NewRun{MapID: spec.MapID, NodeID: branches[i], ProfileID: m.ProfileID, ProfileName: m.ProfileName,
 			Harness: m.Harness, Template: contract.TemplateSwarm, Lens: a.Lens, Mode: spec.Mode, Goal: spec.Goal, Budget: &b,
-			ParentRunID: coord.ID, SwarmID: swarmID, StartedBy: spec.StartedBy}, RepoID: spec.RepoID, ClaimNode: true, CapsChecked: true})
+			ParentRunID: coord.ID, SwarmID: swarmID, StartedBy: spec.StartedBy}, RepoID: spec.RepoID, ClaimNode: true, CapsChecked: true, Slots: slots})
 		if r.ID == "" && err != nil && s.Logf != nil {
 			s.Logf("mindmap: swarm %s lens %s: %v", swarmID, a.Lens, err)
 			continue
@@ -754,18 +815,24 @@ func (s *Service) StopRun(ctx context.Context, runID, by, reason string) (store.
 		summary += " (" + reason + ")"
 	}
 	s.Activity(contract.ActivityEvent{MapID: run.MapID, Type: contract.ActivityRunStatus, Actor: contract.Actor{ParticipantID: by}, Summary: summary, NodeIDs: []string{run.NodeID}})
-	if run.TaskID != "" {
-		msg := StopMessage
-		if reason != "" {
-			msg += " Reason: " + reason + "."
-		}
-		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-		defer cancel()
-		if err := s.Messenger.Send(sctx, run.TaskID, run.SessionID, msg); err != nil {
-			s.Logf("mindmap: stop message to run %s: %v", run.ID, err)
-		}
-	}
+	s.sendStop(ctx, run, reason)
 	return run, nil
+}
+
+// sendStop asks a run's agent to stop, if the run has a task.
+func (s *Service) sendStop(ctx context.Context, run store.RunRecord, reason string) {
+	if run.TaskID == "" {
+		return
+	}
+	msg := StopMessage
+	if reason != "" {
+		msg += " Reason: " + reason + "."
+	}
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	if err := s.Messenger.Send(sctx, run.TaskID, run.SessionID, msg); err != nil {
+		s.Logf("mindmap: stop message to run %s: %v", run.ID, err)
+	}
 }
 
 // messageClosed reports whether a run can no longer be messaged: it was
@@ -817,6 +884,12 @@ func (s *Service) MessageRun(ctx context.Context, runID, by, text string) error 
 	msg := fmt.Sprintf("Message from %s in the mind map:\n\n%s", s.actorName(by), text)
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
+	// A message wakes an idle agent: its time budget restarts from now. It is
+	// restarted before sending so a watchdog tick cannot see the woken run
+	// against its old window.
+	if run.Status == contract.RunReview || run.Status == contract.RunDone {
+		s.restartTimeBudget(run.ID, s.Store.Now().UTC())
+	}
 	if err := s.Messenger.Send(sctx, run.TaskID, run.SessionID, msg); err != nil {
 		return contract.Errf(contract.ErrUnavailable, "could not message the agent: %v", err)
 	}
@@ -844,23 +917,105 @@ func (s *Service) AnswerQuestion(mapID, nodeID, answer, by string) (store.Submit
 
 // --- time budgets ---------------------------------------------------------------------
 
-// EnforceTimeBudgets stops runs that are past their max_minutes. It is
-// called periodically by the plugin.
+// budgetClock is the queued or running time a run has used in its current
+// budget window. Clocks live in memory: a run first seen after a plugin
+// restart is counted from its CreatedAt.
+type budgetClock struct {
+	used  time.Duration // active time before since
+	since time.Time     // start of the current active stretch; zero while idle
+	seen  time.Time     // the last watchdog tick that saw the run
+	// woken marks a window restarted by a message: since is the message
+	// time and stays set while the run has not left review or done yet.
+	woken bool
+}
+
+// budgetActive reports whether a run in this status uses time. A run in
+// review or waiting on a human is idle, and a stop message would wake it.
+func budgetActive(st contract.RunStatus) bool {
+	return st == contract.RunRunning || st == contract.RunQueued
+}
+
+// observe advances the clock to now for a run in r's state and returns the
+// time used in the window. Status changes between ticks are placed at the
+// run's UpdatedAt, clamped to the ticks around them.
+func (c *budgetClock) observe(r store.RunRecord, now time.Time) time.Duration {
+	at := r.UpdatedAt
+	if at.Before(c.seen) {
+		at = c.seen
+	}
+	if at.After(now) {
+		at = now
+	}
+	if budgetActive(r.Status) {
+		if c.since.IsZero() {
+			c.since = at
+		}
+		c.woken, c.seen = false, now
+		return c.used + now.Sub(c.since)
+	}
+	if !c.since.IsZero() && (!c.woken || r.UpdatedAt.After(c.since)) {
+		if at.After(c.since) {
+			c.used += at.Sub(c.since)
+		}
+		c.since, c.woken = time.Time{}, false
+	}
+	c.seen = now
+	return c.used
+}
+
+// restartTimeBudget starts a new budget window for a run at `at` (a message
+// to a run in review or done).
+func (s *Service) restartTimeBudget(runID string, at time.Time) {
+	s.budgetMu.Lock()
+	defer s.budgetMu.Unlock()
+	if s.budgets == nil {
+		s.budgets = map[string]*budgetClock{}
+	}
+	s.budgets[runID] = &budgetClock{since: at, woken: true}
+}
+
+// EnforceTimeBudgets stops runs that have used their max_minutes: the time
+// spent queued or running in the current budget window. It is called
+// periodically by the plugin.
 func (s *Service) EnforceTimeBudgets(ctx context.Context, now time.Time) {
 	runs, err := s.Store.ActiveRuns()
 	if err != nil {
 		return
 	}
+	var over []store.RunRecord
+	s.budgetMu.Lock()
+	if s.budgets == nil {
+		s.budgets = map[string]*budgetClock{}
+	}
+	live := map[string]bool{}
 	for _, r := range runs {
-		// Only agents that are working use time: a run in review or waiting
-		// on a human is idle, and a stop message would wake it up.
-		if r.Budget.MaxMinutes <= 0 || r.CreatedAt.IsZero() || (r.Status != contract.RunRunning && r.Status != contract.RunQueued) || isCoordinator(r) {
+		if r.Budget.MaxMinutes <= 0 || r.StopRequested || isCoordinator(r) {
 			continue
 		}
-		if now.Sub(r.CreatedAt) > time.Duration(r.Budget.MaxMinutes)*time.Minute {
-			if _, err := s.StopRun(ctx, r.ID, "", fmt.Sprintf("time budget of %d minutes used up", r.Budget.MaxMinutes)); err != nil {
-				s.Logf("mindmap: time budget stop %s: %v", r.ID, err)
+		live[r.ID] = true
+		c := s.budgets[r.ID]
+		if c == nil {
+			c = &budgetClock{}
+			if budgetActive(r.Status) && !r.CreatedAt.IsZero() {
+				c.since = r.CreatedAt
 			}
+			s.budgets[r.ID] = c
+		}
+		used := c.observe(r, now)
+		if budgetActive(r.Status) && used > time.Duration(r.Budget.MaxMinutes)*time.Minute {
+			over = append(over, r)
+		}
+	}
+	for id, c := range s.budgets {
+		// A done run's restarted window waits for the run to wake up.
+		if !live[id] && (!c.woken || now.Sub(c.since) > 24*time.Hour) {
+			delete(s.budgets, id)
+		}
+	}
+	s.budgetMu.Unlock()
+	for _, r := range over {
+		if _, err := s.StopRun(ctx, r.ID, "", fmt.Sprintf("time budget of %d minutes used up", r.Budget.MaxMinutes)); err != nil {
+			s.Logf("mindmap: time budget stop %s: %v", r.ID, err)
 		}
 	}
 }
