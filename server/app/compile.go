@@ -367,13 +367,16 @@ func (s *Service) StartCompile(ctx context.Context, spec CompileSpec) ([]store.R
 	out := []store.RunRecord{coord}
 	s.withCompile(coord.ID, func() {
 		for i := range first {
+			if s.coordinatorStopped(coord.ID) {
+				break
+			}
 			r, err := s.startSection(ctx, coord, plan, i, false)
 			if r.ID == "" {
 				plan.Sections[i].Error = errText(err)
 				s.Logf("mindmap: compile %s section %q: %v", coord.ID, plan.Sections[i].Title, err)
 			} else {
 				plan.Sections[i].RunID = r.ID
-				out = append(out, r)
+				out = append(out, s.stopIfCoordinatorStopped(ctx, coord.ID, r))
 			}
 			s.savePlan(coord.ID, plan)
 		}
@@ -540,7 +543,7 @@ func (s *Service) compileStep(ctx context.Context, coordID string) {
 			if sec.RunID != "" || sec.Error != "" {
 				continue
 			}
-			if active >= MaxCompileParallel {
+			if active >= MaxCompileParallel || s.coordinatorStopped(coordID) {
 				break
 			}
 			r, err := s.startSection(ctx, coord, plan, i, true)
@@ -549,17 +552,19 @@ func (s *Service) compileStep(ctx context.Context, coordID string) {
 			} else {
 				sec.RunID = r.ID
 				active++
+				s.stopIfCoordinatorStopped(ctx, coordID, r)
 			}
 			s.savePlan(coordID, plan)
 		}
 		kids, _ = s.Store.ChildRuns(coordID)
-		if plan.SynthRunID == "" && plan.SynthErr == "" && s.sectionsSettled(plan, runOf) {
+		if plan.SynthRunID == "" && plan.SynthErr == "" && !s.coordinatorStopped(coordID) && s.sectionsSettled(plan, runOf) {
 			if s.anySectionSucceeded(plan, runOf) {
 				r, err := s.startSynthesis(ctx, coord, plan)
 				if r.ID == "" {
 					plan.SynthErr = "could not start the synthesis agent: " + errText(err)
 				} else {
 					plan.SynthRunID = r.ID
+					s.stopIfCoordinatorStopped(ctx, coordID, r)
 				}
 			} else {
 				plan.SynthErr = "no section agent finished, so there is nothing to synthesise"
@@ -570,7 +575,8 @@ func (s *Service) compileStep(ctx context.Context, coordID string) {
 	}
 
 	st, wr := compileStatus(plan, runOf)
-	if coord.StopRequested && st.Terminal() {
+	if coord.StopRequested {
+		// Sections that never started keep compileStatus at running.
 		st, wr = contract.RunStopped, ""
 	}
 	if st == contract.RunDone && plan.Target == "dir" && !plan.Exported {

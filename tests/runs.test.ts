@@ -119,6 +119,7 @@ describe("run actions and menus", () => {
     expect(canMessage({ status: "running", template: "swarm" })).toBe(true);
     expect(canMessage({ status: "running", template: "research" })).toBe(false);
     expect(canMessage({ status: "failed", task_id: "t1", template: "research" })).toBe(false);
+    expect(canMessage({ status: "stopped", task_id: "t1", template: "research" })).toBe(false);
   });
 
   it("only enables execute on action nodes", () => {

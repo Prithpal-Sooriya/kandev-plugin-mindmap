@@ -313,7 +313,7 @@ func WriteZip(w io.Writer, slug string, files []DocFile) error {
 
 // ExportBase is the folder exports are written to: the plugin config's
 // export_dir (default ~/Kandev/mindmaps). A map's own export_dir is used
-// only when it lies inside that folder, since guests may edit map settings.
+// only when it lies inside that folder.
 func (s *Service) ExportBase(ctx context.Context, mapID string) (string, error) {
 	cfg := ""
 	if s.ExportDir != nil {
@@ -349,8 +349,13 @@ func expandDir(d string) (string, error) {
 }
 
 // ExportToDisk writes a doc tree to the export folder and records where.
-// It returns the "<base>/<slug>" folder.
+// Files go under "<base>/<map id>/", since the slug is chosen by whoever
+// compiles (guests too): a slug may only replace files of its own map. It
+// returns the "<base>/<map id>/<slug>" folder.
 func (s *Service) ExportToDisk(ctx context.Context, mapID, docRootID string) (string, error) {
+	if !contract.ValidID(contract.PrefixMap, mapID) {
+		return "", contract.FieldErr(contract.ErrBadRequest, "map_id", "invalid map id")
+	}
 	tree, files, err := s.ExportFiles(mapID, docRootID)
 	if err != nil {
 		return "", err
@@ -359,6 +364,7 @@ func (s *Service) ExportToDisk(ctx context.Context, mapID, docRootID string) (st
 	if err != nil {
 		return "", err
 	}
+	base = filepath.Join(base, mapID)
 	if err := os.MkdirAll(filepath.Join(base, tree.Slug, "assets"), 0o755); err != nil {
 		return "", contract.Errf(contract.ErrUnavailable, "create the export folder: %v", err)
 	}

@@ -31,9 +31,10 @@ export async function approveRun(ctl: MapController, run: Pick<Run, "id">): Prom
   }
 }
 
-/** Coordinator runs (swarms) have no task; messages fan out to their agents. */
+/** Coordinator runs (swarms) have no task; messages fan out to their agents.
+ * Stopped and failed runs cannot be messaged: continuing means a new run. */
 export function canMessage(run: Pick<Run, "status" | "task_id" | "template">): boolean {
-  return run.status !== "failed" && (!!run.task_id || run.template === "swarm");
+  return run.status !== "failed" && run.status !== "stopped" && (!!run.task_id || run.template === "swarm");
 }
 
 export function RunActions(props: { ctl: MapController; run: Run }) {

@@ -170,17 +170,18 @@ func TestCompilePlansSectionsThenSynthesis(t *testing.T) {
 		t.Fatalf("coordinator after synthesis: %s (%s)", c.Status, c.Error)
 	}
 
-	// No repository: the backend wrote the files to export_dir.
+	// No repository: the backend wrote the files to export_dir/<map id>.
+	mapDir := filepath.Join(exportDir, m.ID)
 	for _, f := range []string{"note-app.md", "note-app/index.md", "note-app/pricing/index.md", "note-app/pricing/student-discount.md",
 		"note-app/research/index.md", "note-app/risks/index.md"} {
-		if _, err := os.Stat(filepath.Join(exportDir, f)); err != nil {
+		if _, err := os.Stat(filepath.Join(mapDir, f)); err != nil {
 			t.Errorf("exported file %s: %v", f, err)
 		}
 	}
-	if fi, err := os.Stat(filepath.Join(exportDir, "note-app", "assets")); err != nil || !fi.IsDir() {
+	if fi, err := os.Stat(filepath.Join(mapDir, "note-app", "assets")); err != nil || !fi.IsDir() {
 		t.Errorf("assets folder: %v", err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(exportDir, "note-app.md")); !strings.Contains(string(b), "Everything in one place.") {
+	if b, _ := os.ReadFile(filepath.Join(mapDir, "note-app.md")); !strings.Contains(string(b), "Everything in one place.") {
 		t.Errorf("single doc content: %q", b)
 	}
 	st, b := api(t, p, "GET", "/api/maps/"+m.ID+"/docs", nil)
@@ -189,7 +190,7 @@ func TestCompilePlansSectionsThenSynthesis(t *testing.T) {
 		t.Fatalf("docs: %d %s", st, b)
 	}
 	tr := trees[0]
-	if tr.Slug != "note-app" || tr.ExportedTo != filepath.Join(exportDir, "note-app") || tr.Single == nil || tr.Single.NodeID != single.ID ||
+	if tr.Slug != "note-app" || tr.ExportedTo != filepath.Join(mapDir, "note-app") || tr.Single == nil || tr.Single.NodeID != single.ID ||
 		tr.Index.NodeID != root.ID || len(tr.Index.Children) != 3 || len(tr.Index.Children[0].Children) != 1 || tr.RootNodeID != m.RootID {
 		t.Fatalf("doc tree: %+v", tr)
 	}

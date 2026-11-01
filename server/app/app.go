@@ -358,11 +358,18 @@ func (s *Service) SetRunNodeStatus(r store.RunRecord) {
 }
 
 // RecordOutput publishes agent output for subscribers and updates the run's
-// last_output at most once a second.
+// last_output at most once a second. Token secrets are redacted first:
+// output reaches guests.
 func (s *Service) RecordOutput(r store.RunRecord, lines []contract.OutputLine) {
 	if len(lines) == 0 {
 		return
 	}
+	redacted := make([]contract.OutputLine, len(lines))
+	for i, l := range lines {
+		l.Text = contract.RedactTokens(l.Text)
+		redacted[i] = l
+	}
+	lines = redacted
 	s.Hub.PublishOutput(r.MapID, r.ID, lines)
 	s.mu.Lock()
 	last := s.lastOutput[r.ID]

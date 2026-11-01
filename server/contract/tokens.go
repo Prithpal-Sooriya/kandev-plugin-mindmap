@@ -62,6 +62,31 @@ func ParseToken(raw string) (ParsedToken, bool) {
 	return ParsedToken{}, false
 }
 
+// tokenInText matches a raw token (or the start of one cut short) in free
+// text: group 1 is the kind and, for bridge tokens, the port (kept); group 2
+// is the secret. The secret may be empty so that already redacted text
+// matches with nothing to replace.
+var tokenInText = regexp.MustCompile(`(mm[lsgrp]1\.(?:\d{1,5}\.)?)([A-Za-z0-9_-]*)`)
+
+// RedactedSecret replaces token secrets in RedactTokens.
+const RedactedSecret = "[redacted]"
+
+// RedactTokens replaces the secret of every token in s, so agent output that
+// echoes a token (a tool call, a config dump) can be shown and stored. It is
+// idempotent.
+func RedactTokens(s string) string {
+	if !strings.Contains(s, "1.") {
+		return s
+	}
+	return tokenInText.ReplaceAllStringFunc(s, func(m string) string {
+		g := tokenInText.FindStringSubmatch(m)
+		if g[2] == "" {
+			return m
+		}
+		return g[1] + RedactedSecret
+	})
+}
+
 // FormatToken assembles a raw token. port is ignored for non-bridge kinds.
 func FormatToken(kind TokenKind, port int, secret string) string {
 	if kind == TokenRun || kind == TokenPersonal {

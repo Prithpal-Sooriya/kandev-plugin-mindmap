@@ -1,6 +1,6 @@
 id: "kandev-plugin-mindmap"
 api_version: 1
-version: "0.3.1"
+version: "0.3.2"
 display_name: "Mind Map"
 description: "An agentic, multiplayer mind map: you and your agents branch out, research, reorganise and compile docs together."
 author: "Prithpal-Sooriya"

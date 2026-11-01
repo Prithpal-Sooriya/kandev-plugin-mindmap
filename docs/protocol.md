@@ -105,7 +105,7 @@ Rules:
    (apply or propose) and the budget.
 4. **Grace.** When the run reaches a terminal status (`done`, `failed`, `stopped`), the token keeps working for 10
    minutes, so a late `report` or `write_doc` still lands. After that every call returns `run_ended`. A follow-up
-   message that moves the run back to `running` re-opens the token.
+   message to a stopped or failed run is refused (`409 conflict`); it never re-opens the token.
 5. **Revoke.** Stop, the kill switch, deleting the map, or deleting the run revokes it at once.
 
 ### Kandev MCP access check (`task_id → run`)
@@ -415,8 +415,9 @@ turn_ended | approval`).
    when its turn ends; until then every write tool (and `mindmap-patch` block) from the run fails with
    `run_ended`. Bridge calls fail at once (token revoked); Kandev MCP reads and `report` keep working for the
    10-minute grace, then fail with `run_ended` too. Stopping a
-   stopped run is a no-op. The UI also links to the task. A `message` to a stopped run re-opens it (clears
-   `stop_requested`; bridge runs get a fresh token in the message) and the next `RUNNING` state makes it `running`.
+   stopped run is a no-op. The UI also links to the task. A `message` to a stopped or failed run returns
+   `409 conflict` for everyone, host included: it does not clear `stop_requested` or issue a token. To continue,
+   the host starts a new run.
 5. **Budget.** `usage` is summed across the run tree (`root_run_id`). Writes that would exceed it fail with
    `budget_exceeded`; so does a `spawn` beyond `max_subagents`. `max_minutes` is enforced by a 30 s watchdog that
    stops a `queued` or `running` run (as in 4) with `error: "time budget of N minutes used up"`. Runs in
@@ -603,8 +604,9 @@ Agent runs launch real Kandev tasks. Notes for clients and for the sharing work:
    sections from the branch; if none succeeded the compile fails without a synthesis.
 6. **Output.** With a repository (`target: repo`, default when the map has `repo_id` or `repo_id` is given), the
    synthesis task gets the repository and writes `docs/mindmaps/<slug>.md` and `docs/mindmaps/<slug>/…` on its own
-   branch. Otherwise (`target: dir`) the plugin writes the doc nodes to `<export folder>/<slug>.md` and
-   `<export folder>/<slug>/{index.md, <dir>/index.md, <dir>/<sub>.md, assets/}` when the coordinator is done.
+   branch. Otherwise (`target: dir`) the plugin writes the doc nodes to `<export folder>/<map id>/<slug>.md` and
+   `<export folder>/<map id>/<slug>/{index.md, <dir>/index.md, <dir>/<sub>.md, assets/}` when the coordinator is
+   done. The map id folder keeps a slug (which guests may choose) from replacing another map's files.
    The export folder is the plugin config `export_dir` (default `~/Kandev/mindmaps`); a map's
    `settings.export_dir` is honoured only inside it.
 7. **Caps and approval.** `CheckRunCaps` is applied to the first wave. While `require_guest_run_approval` is on, a

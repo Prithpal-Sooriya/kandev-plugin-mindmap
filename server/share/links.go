@@ -183,17 +183,21 @@ func (l *Links) ensureAndView(ctx context.Context, row store.ShareRow) (contract
 	return l.view(row), nil
 }
 
+// stopRow revokes a link's tokens and only then closes its sockets: a
+// connection checks its token once, when it opens, so a reconnect that
+// lands between closing and revoking would stay open for good.
 func (l *Links) stopRow(row store.ShareRow) error {
+	err := l.Store.RevokeShareLinkTokens(row.ID)
+	if err == nil {
+		err = l.Secrets.Delete(row.ID)
+	}
+	if err == nil {
+		err = l.Store.StopShare(row.ID)
+	}
 	if l.OnStop != nil {
 		l.OnStop(row.ID)
 	}
-	if err := l.Store.RevokeShareLinkTokens(row.ID); err != nil {
-		return err
-	}
-	if err := l.Secrets.Delete(row.ID); err != nil {
-		return err
-	}
-	return l.Store.StopShare(row.ID)
+	return err
 }
 
 func (l *Links) stopTunnelIfIdle() error {

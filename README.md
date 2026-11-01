@@ -30,7 +30,7 @@ and open its task; question nodes from `ask_human` can be answered inline; each 
   branch writes its section in parallel (big branches get sub-docs), then one agent writes the overview and a
   single consolidated doc. The docs appear in the map as doc nodes under the branch, readable in the inspector.
 - Maps with a repository get the files under `docs/mindmaps/` on the synthesis task's branch. Other maps are
-  written to the export folder (plugin config `export_dir`, default `~/Kandev/mindmaps`). Any doc tree can also be
+  written to `<map id>/<slug>/` in the export folder (plugin config `export_dir`, default `~/Kandev/mindmaps`). Any doc tree can also be
   downloaded as a zip from the inspector or the palette.
 - **Suggest branches** asks Kandev's utility agent for a few child ideas. They arrive as proposed (ghost) nodes to
   accept or reject.
@@ -64,7 +64,7 @@ in `.kandev-sdk-ref` (the SDK is not published as its own module yet).
 ```sh
 make test          # go test -race, tsc, vitest
 make package-host  # builds kandev-plugin-mindmap-<version>.tar.gz for this platform
-curl -F package=@kandev-plugin-mindmap-0.3.1.tar.gz http://127.0.0.1:38430/api/plugins/install
+curl -F package=@kandev-plugin-mindmap-0.3.2.tar.gz http://127.0.0.1:38430/api/plugins/install
 ```
 
 UI development without Kandev or the Go backend:
