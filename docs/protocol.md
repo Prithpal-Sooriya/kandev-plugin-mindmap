@@ -598,7 +598,9 @@ Agent runs launch real Kandev tasks. Notes for clients and for the sharing work:
 4. **Sections.** One `compile` run per section (`parent_run_id` = coordinator, budget 20 nodes / 20 minutes),
    at most 8 at once; the next starts when one settles. The prompt names its doc id, path, the split plan and
    the sibling sections for cross-links. Agents write with `write_doc` (existing `doc_id`, or `parent_doc_id`
-   for sub-docs).
+   for sub-docs). A section or synthesis run settles when it is `done`, `failed`, `stopped` or `review`;
+   `waiting(turn_ended)` and `waiting(question)` have not settled. A run that goes idle without `report` is
+   messaged to finish its doc and report, at most twice; idle again without a report, it is marked `failed`.
 5. **Synthesis.** When every section has settled, one `synthesis` run on the target node writes the overview into
    the doc root and the consolidated single doc. If some sections failed it still runs and is told to write those
    sections from the branch; if none succeeded the compile fails without a synthesis.

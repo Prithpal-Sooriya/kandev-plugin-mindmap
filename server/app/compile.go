@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"kandev-plugin-mindmap/server/contract"
 	"kandev-plugin-mindmap/server/store"
@@ -238,10 +239,102 @@ func PlanSections(nodes map[string]*contract.Node, rootID string) []SectionPlan 
 	return out
 }
 
-// settled reports whether a child run has finished its part: ended, in
-// review, or idle after its turn.
+// settled reports whether a child run has finished its part: ended or in
+// review. An agent idle between turns (waiting, turn_ended) or on a
+// question has paused, not finished.
 func settled(r store.RunRecord) bool {
-	return r.Status.Terminal() || r.Status == contract.RunReview || r.Status == contract.RunWaiting && r.WaitingReason == contract.WaitingTurnEnded
+	return r.Status.Terminal() || r.Status == contract.RunReview
+}
+
+// MaxCompileNudges is how many continuation messages a compile child that
+// goes idle without calling report gets. Going idle once more fails it.
+const MaxCompileNudges = 2
+
+// IdleFailure is the error of a compile child failed for going idle
+// without a report after MaxCompileNudges continuation messages.
+const IdleFailure = "agent stopped between turns without reporting"
+
+func isCompileChild(r store.RunRecord) bool {
+	return r.ParentRunID != "" && r.TaskID != "" && (r.Template == contract.TemplateCompile || r.Template == contract.TemplateSynthesis)
+}
+
+// wentIdle reports whether an update moved a run into waiting(turn_ended)
+// without a report.
+func wentIdle(prev, r store.RunRecord) bool {
+	idle := func(x store.RunRecord) bool {
+		return x.Status == contract.RunWaiting && x.WaitingReason == contract.WaitingTurnEnded
+	}
+	return idle(r) && !idle(prev) && !r.Reported && !r.StopRequested
+}
+
+// nudgeIdleCompileChild handles a compile section or synthesis run that
+// went idle without calling report: it is told to finish its doc and
+// report, at most MaxCompileNudges times, then failed so the compile can
+// advance. The count is kept in memory: after a plugin restart a run can be
+// nudged MaxCompileNudges more times.
+func (s *Service) nudgeIdleCompileChild(r store.RunRecord) store.RunRecord {
+	s.nudgeMu.Lock()
+	if s.nudges == nil {
+		s.nudges = map[string]int{}
+	}
+	n := s.nudges[r.ID]
+	if n < MaxCompileNudges {
+		s.nudges[r.ID] = n + 1
+	}
+	s.nudgeMu.Unlock()
+	if n >= MaxCompileNudges {
+		failed, err := s.UpdateRun(r.ID, func(cur *store.RunRecord) bool {
+			if cur.Status != contract.RunWaiting || cur.WaitingReason != contract.WaitingTurnEnded || cur.Reported {
+				return false
+			}
+			cur.Status, cur.WaitingReason = contract.RunFailed, ""
+			cur.Error = fmt.Sprintf("%s (after %d reminders)", IdleFailure, MaxCompileNudges)
+			return true
+		})
+		if err != nil {
+			s.Logf("mindmap: fail idle compile run %s: %v", r.ID, err)
+			return r
+		}
+		if failed.Status == contract.RunFailed {
+			_ = s.Store.RevokeRunTokens(failed.ID)
+			s.SetRunNodeStatus(failed)
+			s.releaseClaims(failed)
+			s.Activity(contract.ActivityEvent{MapID: failed.MapID, Type: contract.ActivityRunStatus, Actor: contract.Actor{ParticipantID: failed.ParticipantID, RunID: failed.ID},
+				Summary: "run failed: " + failed.Error, NodeIDs: []string{failed.NodeID}})
+		}
+		return failed
+	}
+	sctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := s.Messenger.Send(sctx, r.TaskID, r.SessionID, s.continueMessage(r, n+1)); err != nil {
+		s.Logf("mindmap: continue message to compile run %s: %v", r.ID, err)
+	}
+	s.syncCoordinator(r.ParentRunID)
+	return r
+}
+
+func (s *Service) forgetNudges(runID string) {
+	s.nudgeMu.Lock()
+	defer s.nudgeMu.Unlock()
+	delete(s.nudges, runID)
+}
+
+// continueMessage tells an idle compile agent what is left: the doc(s) it
+// writes, then report.
+func (s *Service) continueMessage(r store.RunRecord, n int) string {
+	docs := "your doc"
+	if plan, ok := s.loadPlan(r.ParentRunID); ok {
+		if r.Template == contract.TemplateSynthesis {
+			docs = fmt.Sprintf("the overview [%s] and the single doc [%s]", plan.DocRootID, plan.SingleDocID)
+		}
+		for _, sec := range plan.Sections {
+			if r.Template == contract.TemplateCompile && sec.NodeID == r.NodeID {
+				docs = fmt.Sprintf("your section doc [%s] (`%s/index.md`)", sec.DocID, sec.Dir)
+			}
+		}
+	}
+	return fmt.Sprintf("Continue the mind map compile: your turn ended without `report`. Finish %s with `write_doc`, then call `report` "+
+		"(status `done`). Reminder %d of %d: if you stop again without reporting, this run is marked failed.", docs, n, MaxCompileNudges)
 }
 
 // succeeded reports whether a settled run produced something to build on.
@@ -820,7 +913,7 @@ func (s *Service) anySectionSucceeded(plan compilePlan, runOf func(string) (stor
 func compileStatus(plan compilePlan, runOf func(string) (store.RunRecord, bool)) (contract.RunStatus, contract.WaitingReason) {
 	if r, ok := runOf(plan.SynthRunID); ok {
 		if r.Status == contract.RunWaiting && r.WaitingReason == contract.WaitingTurnEnded {
-			return contract.RunDone, "" // the agent ended its turn without a report: the docs are what it wrote
+			return contract.RunRunning, "" // idle between turns: it was told to continue
 		}
 		return coordinatorStatus([]store.RunRecord{r})
 	}

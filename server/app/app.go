@@ -130,6 +130,9 @@ type Service struct {
 	compileBusy  map[string]bool // coordinator id -> a goroutine is stepping it
 	compileDirty map[string]bool // coordinator id -> step again when done
 
+	nudgeMu sync.Mutex
+	nudges  map[string]int // compile child run id -> continuation messages sent
+
 	mu         sync.Mutex
 	port       int
 	origins    map[string]bool
@@ -411,12 +414,23 @@ func (s *Service) RecordOutput(r store.RunRecord, lines []contract.OutputLine) {
 
 // UpdateRun does a serialised read-modify-write of one run. fn returns false
 // to skip saving. The saved run is broadcast, and a swarm coordinator above
-// it recomputes its status. A run that ends frees a run slot, so the map's
-// compiles waiting for one step again.
+// it recomputes its status. A compile child that goes idle without a
+// report is nudged (or failed) first. A run that ends frees a run slot, so
+// the map's compiles waiting for one step again.
 func (s *Service) UpdateRun(runID string, fn func(r *store.RunRecord) bool) (store.RunRecord, error) {
-	r, saved, err := s.updateRun(runID, fn)
+	var prev store.RunRecord
+	r, saved, err := s.updateRun(runID, func(cur *store.RunRecord) bool {
+		prev = *cur
+		return fn(cur)
+	})
 	if err != nil || !saved {
 		return r, err
+	}
+	if wentIdle(prev, r) && isCompileChild(r) {
+		return s.nudgeIdleCompileChild(r), nil
+	}
+	if r.Status.Terminal() {
+		s.forgetNudges(r.ID)
 	}
 	if r.ParentRunID != "" {
 		s.syncCoordinator(r.ParentRunID)

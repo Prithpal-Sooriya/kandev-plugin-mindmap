@@ -26,6 +26,8 @@ How this is built: the build moved from Claude Code to Cursor on 2026-10-31. A C
 
 When no profile is given, runs use the first available of Pi, then Cursor, then Claude. The verification step for 0.3.3 is one full live compile with the Pi profile into a folder: section runs, the synthesis run, doc nodes, and the export (consolidated markdown plus a folder per branch).
 
+A compile section or synthesis run counts as finished only when it is done, failed, stopped or in review. An agent that goes idle without calling `report` (Pi does this between turns) is told to finish its doc and report, at most twice. If it goes idle again without reporting, that run is marked failed and the compile moves on.
+
 ## Key facts learned
 
 - Claude and Cursor tasks see the plugin's tools, for example `mcp__kandev__kandev_kandev_plugin_mindmap_<tool>`. Pi has no MCP client, so it needs the bridge (2e) or the prompt fallback.
