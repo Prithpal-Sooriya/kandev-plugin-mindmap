@@ -367,3 +367,29 @@ select.mm-input { padding-right: 4px; }
 .mm-branch { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .mm-branch li { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .mm-branch-root { font-weight: 600; }
+
+/* --- agents dock and compiled docs ---------------------------------------------- */
+.mm-drawer { width: 320px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--background); min-height: 0; }
+.mm-drawer-tabs { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex: none; }
+.mm-drawer-tabs button { flex: 1; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); font: inherit; font-size: 12px; cursor: pointer; }
+.mm-drawer-tabs button.mm-on { background: var(--muted); color: var(--foreground); }
+.mm-drawer-body { flex: 1; overflow: auto; min-height: 0; }
+.mm-drawer-runs { display: flex; flex-direction: column; padding: 8px; gap: 6px; }
+.mm-drawer-filter { gap: 6px; padding-bottom: 2px; }
+.mm-drawer-run { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; min-width: 0; }
+.mm-drawer-run .mm-row { gap: 6px; min-width: 0; }
+.mm-drawer-run-group { display: flex; flex-direction: column; gap: 6px; }
+.mm-depth-1 { margin-left: 12px; } .mm-depth-2 { margin-left: 24px; } .mm-depth-3 { margin-left: 36px; }
+.mm-drawer-actions:empty { display: none; }
+.mm-activity-feed, .mm-participants-list { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; font-size: 12px; }
+.mm-activity-item { display: flex; gap: 8px; }
+.mm-participant-row { gap: 8px; }
+.mm-avatar-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.mm-textlink { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; text-align: left; cursor: pointer; max-width: 100%; }
+.mm-textlink:hover { text-decoration: underline; }
+.mm-doc-panel p { margin: 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.mm-doc-panel code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; background: var(--muted); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+.mm-doc-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.mm-md-doc { font-size: 13.5px; }
+.mm-md-doc h3 { font-size: 15px; } .mm-md-doc h4 { font-size: 14px; }
+.mm-doclink { color: var(--primary); text-decoration: underline dotted; }

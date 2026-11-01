@@ -58,6 +58,9 @@ export const ICONS = {
   edit: "M4 20h4L19 9l-4-4L4 16zM14 6l4 4",
   undo: "M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3",
   redo: "M15 14l5-5l-5-5M20 9H9a5 5 0 0 0 0 10h3",
+  doc: "M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6",
+  download: "M12 4v11M7 10l5 5l5-5M5 20h14",
+  sparkle: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z",
 };
 
 export function MindmapIcon(props: { className?: string; size?: number }) {

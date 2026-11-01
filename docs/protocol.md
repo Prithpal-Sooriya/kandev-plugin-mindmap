@@ -156,8 +156,10 @@ contract types. Errors return `{"error": Error}` with the HTTP status from `Erro
 | `GET /m/<t>/api/maps/<map>/ops` | `?from=<rev>&to=<rev>` → `{ops: Op[]}` |
 | `POST /m/<t>/api/maps/<map>/runs` | `StartRunRequest` → `StartRunsResponse` |
 | `POST /m/<t>/api/maps/<map>/swarms` | `SwarmRequest` → `StartRunsResponse` |
-| `POST /m/<t>/api/maps/<map>/compile` | `CompileRequest` → `StartRunsResponse` (section runs + synthesis run) |
-| `POST /m/<t>/api/maps/<map>/suggest` | `SuggestRequest` → `SuggestResponse` (one-shot `InvokeUtilityAgent`) |
+| `POST /m/<t>/api/maps/<map>/compile` | `CompileRequest` → `StartRunsResponse`: `[coordinator, ...first wave of section runs]` (§15) |
+| `POST /m/<t>/api/maps/<map>/suggest` | `SuggestRequest` → `SuggestResponse`: `200` when the utility agent answers within 18 s, else `202` with `status: running` (§15) |
+| `GET /m/<t>/api/maps/<map>/suggest/<job>` | `SuggestResponse` of a suggest job (poll after a `202`) |
+| `GET /m/<t>/api/maps/<map>/docs` | `DocTree[]`: compiled doc trees, newest first |
 | `POST /m/<t>/api/runs/<run>/stop` | asks the agent to stop (§9). `204` |
 | `POST /m/<t>/api/runs/<run>/message` | `MessageRunRequest` → `Messages().Send`. `204` |
 | `POST /m/<t>/api/runs/<run>/approve` | host only: launch a guest run (or swarm) held for approval → `StartRunsResponse` |
@@ -170,7 +172,8 @@ contract types. Errors return `{"error": Error}` with the HTTP status from `Erro
 | `GET /m/<t>/assets/<id>` | asset bytes (guests; the in-Kandev UI uses the `asset` webhook) |
 | `GET /m/<t>/api/profiles` | `AgentProfile[]` via `AgentProfiles().List` |
 | `POST /m/<t>/api/maps/<map>/fork` | `{rev?}` → `Map` (fork at rev, default head) |
-| `GET /m/<t>/api/maps/<map>/export.zip` | compiled docs as a zip |
+| `GET /m/<t>/api/maps/<map>/export.zip` | `?node_id=<doc>` (default the newest tree): the doc tree as a zip built from the doc nodes |
+| `POST /m/<t>/api/maps/<map>/export` | host only, `?node_id=<doc>`: write the doc tree to the export folder → `DocTree` with `exported_to` |
 | `POST /m/<t>/api/maps/<map>/share` | host only: start the tunnel if needed, mint a 256-bit share token, return `ShareLink` whose `url` is `https://<host>/m/<mms token>/` |
 | `POST /m/<t>/api/maps/<map>/share/rotate` | host only: invalidate the current link and mint another. The tunnel stays up |
 | `DELETE /m/<t>/api/maps/<map>/share` | host only: stop sharing this map. `204`. The tunnel stops when no map is shared |
@@ -516,7 +519,7 @@ against these.
 
 - The manifest also subscribes to `message.updated`, so `mindmap-patch` blocks in agent messages that stream in
   through updates are still executed (each block once, keyed by `(message_id, block index)`).
-- Routes from §4 that later phases build (compile, suggest, export.zip) answer `501 not_implemented`. Share,
+- Compile, suggest, docs and export are live since Phase 2c (§15). Share,
   rotate, stop, status, join, audit, share settings and the kill switch are live (Phase 2d). Runs, swarms, stop,
   message, approve and answers work since Phase 2a (§14). While `require_guest_run_approval` is on, a guest's run
   is created in `waiting(approval)` with no task until the host approves it.
@@ -558,7 +561,8 @@ against these.
 Agent runs launch real Kandev tasks. Notes for clients and for the sharing work:
 
 - **Templates.** `POST runs` takes `template ∈ research | expand | critique | examples | custom | explore | garden |
-  execute` (`swarm` only through `POST swarms`; `compile`/`synthesis` arrive later). `explore` is the autonomous
+  execute` (`swarm` only through `POST swarms`; `compile`, `synthesis` and `suggest` only through `POST compile`
+  and `POST suggest`, else `bad_request`). `explore` is the autonomous
   explorer: it works within `budget` and may `spawn`. `garden` always runs in `propose` mode and defaults to the
   root node. `execute` needs an `action` node and uses `repo_id` (default: the map's `repo_id`). `custom` needs a
   `goal`. `lens` adds a persona to any template.
@@ -576,3 +580,43 @@ Agent runs launch real Kandev tasks. Notes for clients and for the sharing work:
   `execute` run falls back to the map's `repo_id`.
 - **Task panel.** The in-Kandev bundle registers a task panel (`mindmap-run`) that reads
   `GET tasks/<task>/run` and links to `/mindmap?map=<map>&node=<node>`; the canvas selects `?node=` on load.
+
+## 15. Phase 2c: compile, export, suggest
+
+**Compile** (`POST compile`) is a map-reduce over the existing launcher:
+
+1. **Plan.** The target node's non-doc children are the sections (a leaf is one section). At most 24 sections. A
+   section **splits** into sub-docs when it has 8 or more children or more than 1,500 words in its branch.
+   Folder and file names are slugs, unique among siblings; `assets` and `index` are reserved.
+2. **Placeholders.** Before any agent starts, the plugin adds the doc tree under the target node: a doc root
+   (`<title> · docs`, path `index.md`), the single doc (`<slug>.md`) and one doc per section
+   (`<dir>/index.md`), each with body `_Compiling…_`. `DocMeta.path` is relative to the `<slug>/` folder.
+3. **Coordinator.** A `compile` run with no task, `parent_run_id` empty and `profile_name: "N sections"`. It owns
+   the budget pool (`max_subagents` = sections + 1) and does not count toward `max_concurrent_runs`. Its status
+   follows the swarm rule (§9.6), plus: `running` until the synthesis has settled.
+4. **Sections.** One `compile` run per section (`parent_run_id` = coordinator, budget 20 nodes / 20 minutes),
+   at most 8 at once; the next starts when one settles. The prompt names its doc id, path, the split plan and
+   the sibling sections for cross-links. Agents write with `write_doc` (existing `doc_id`, or `parent_doc_id`
+   for sub-docs).
+5. **Synthesis.** When every section has settled, one `synthesis` run on the target node writes the overview into
+   the doc root and the consolidated single doc. If some sections failed it still runs and is told to write those
+   sections from the branch; if none succeeded the compile fails without a synthesis.
+6. **Output.** With a repository (`target: repo`, default when the map has `repo_id` or `repo_id` is given), the
+   synthesis task gets the repository and writes `docs/mindmaps/<slug>.md` and `docs/mindmaps/<slug>/…` on its own
+   branch. Otherwise (`target: dir`) the plugin writes the doc nodes to `<export folder>/<slug>.md` and
+   `<export folder>/<slug>/{index.md, <dir>/index.md, <dir>/<sub>.md, assets/}` when the coordinator is done.
+   The export folder is the plugin config `export_dir` (default `~/Kandev/mindmaps`); a map's
+   `settings.export_dir` is honoured only inside it.
+7. **Caps and approval.** `CheckRunCaps` is applied to the first wave. While `require_guest_run_approval` is on, a
+   guest's compile creates the coordinator and the sections in `waiting(approval)` with no tasks;
+   `POST runs/<coordinator>/approve` launches them, and later waves and the synthesis are not held again.
+
+`GET export.zip` builds the same layout from the doc nodes at any time (also before the agents finish), with a
+`<slug>/assets/` folder holding the attachments of the docs and of the map nodes they cite.
+
+**Suggest** (`POST suggest`) is one short `InvokeUtilityAgent` turn (empty `profile_id` = Kandev's default utility
+profile). The plugin creates a `suggest` run in `propose` mode (no task, budget 1 sub-agent), asks for a JSON
+array of `{title, kind, body}`, drops titles that already exist under the node, and proposes `node.create` ops
+tagged `suggested`. The suggestions are ghosts until reviewed. `SuggestResponse.status` is `running`, `done` or
+`failed`; `proposal_id` and `node_ids` are set once proposed. A guest gets `forbidden` while
+`require_guest_run_approval` is on (a utility call cannot be held).

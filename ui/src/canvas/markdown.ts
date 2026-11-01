@@ -9,7 +9,9 @@ function inline(s: string): string {
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    // Relative links between compiled docs: no target in the canvas, keep the text.
+    .replace(/\[([^\]]+)\]\(((?!https?:)[^\s)]+)\)/g, '<span class="mm-doclink" title="$2">$1</span>');
 }
 
 export function renderMarkdown(md: string): string {

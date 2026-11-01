@@ -2,8 +2,8 @@
 //   ui/src/kandev/adapter.ts      in-Kandev bundle (host React, webhooks, loopback WS)
 //   ui/src/standalone/adapter.ts  guest web app (own React, /m/<token>/ paths)
 import type {
-  ActivityEvent, AgentProfile, CreateMapRequestShape, Infer, MapSummary, MindMap, Op, OutputLine, Participant, Proposal,
-  RepoInfo, ReviewProposalRequest, Run, ShareLink, StartRunRequest, SwarmRequest, TaskRunInfo,
+  ActivityEvent, AgentProfile, CompileRequest, CreateMapRequestShape, DocTree, Infer, MapSummary, MindMap, Op, OutputLine, Participant,
+  Proposal, RepoInfo, ReviewProposalRequest, Run, ShareLink, StartRunRequest, SuggestRequest, SuggestResponse, SwarmRequest, TaskRunInfo,
 } from "../contract";
 import type { MapEndpoints, WsFactory } from "../transport/connection";
 
@@ -21,6 +21,19 @@ export interface MapApi {
   startRun(mapId: string, req: StartRunRequest): Promise<Run[]>;
   /** Coordinator run first, then one run per lens. */
   startSwarm(mapId: string, req: SwarmRequest): Promise<Run[]>;
+  /** Compile a branch into docs: the coordinator run first, then the section runs. */
+  compile(mapId: string, req: CompileRequest): Promise<Run[]>;
+  /** Quick suggest. `status: "running"` means poll `suggestJob`. */
+  suggest(mapId: string, req: SuggestRequest): Promise<SuggestResponse>;
+  suggestJob(mapId: string, jobId: string): Promise<SuggestResponse>;
+  /** Launch a guest run held for approval (host only). */
+  approveRun(runId: string): Promise<Run[]>;
+  /** Compiled doc trees, newest first. */
+  docs(mapId: string): Promise<DocTree[]>;
+  /** A doc tree as a zip (`docRootId` is any doc in it; default the newest). */
+  exportZip(mapId: string, docRootId?: string): Promise<Blob>;
+  /** Write a doc tree to the export folder on the host's disk (host only). */
+  exportDocs(mapId: string, docRootId?: string): Promise<DocTree>;
   stopRun(runId: string): Promise<void>;
   messageRun(runId: string, text: string): Promise<void>;
   answerQuestion(mapId: string, nodeId: string, answer: string): Promise<void>;
