@@ -2,7 +2,7 @@
   "name": "kandev-plugin-mindmap",
   "private": true,
   "type": "module",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },

@@ -411,11 +411,18 @@ func (s *Service) RecordOutput(r store.RunRecord, lines []contract.OutputLine) {
 
 // UpdateRun does a serialised read-modify-write of one run. fn returns false
 // to skip saving. The saved run is broadcast, and a swarm coordinator above
-// it recomputes its status.
+// it recomputes its status. A run that ends frees a run slot, so the map's
+// compiles waiting for one step again.
 func (s *Service) UpdateRun(runID string, fn func(r *store.RunRecord) bool) (store.RunRecord, error) {
 	r, saved, err := s.updateRun(runID, fn)
-	if err == nil && saved && r.ParentRunID != "" {
+	if err != nil || !saved {
+		return r, err
+	}
+	if r.ParentRunID != "" {
 		s.syncCoordinator(r.ParentRunID)
+	}
+	if r.Status.Terminal() && !isCoordinator(r) {
+		s.kickCompiles(r.MapID, r.ParentRunID)
 	}
 	return r, err
 }

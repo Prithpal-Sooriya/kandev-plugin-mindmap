@@ -26,8 +26,8 @@ func TestAssetAttachRejectsOtherMapsID(t *testing.T) {
 
 	stolen := asset
 	stolen.NodeID, stolen.Caption = b.RootID, "B's caption"
-	if _, err := s.Submit(b.ID, []contract.Op{attachOp(b.ID, stolen)}, SubmitOptions{Actor: contract.Actor{ParticipantID: host2.ID}}); err == nil {
-		t.Fatal("attach with another map's asset id was accepted")
+	if _, err := s.Submit(b.ID, []contract.Op{attachOp(b.ID, stolen)}, SubmitOptions{Actor: contract.Actor{ParticipantID: host2.ID}}); code(err) != contract.ErrConflict {
+		t.Fatalf("attach with another map's asset id: %v, want conflict", err)
 	}
 	got, _, err := s.AssetFile(a1.ID, asset.ID)
 	if err != nil {

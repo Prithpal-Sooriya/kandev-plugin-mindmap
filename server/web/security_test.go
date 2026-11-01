@@ -39,6 +39,40 @@ func TestAssetTraversalNotServed(t *testing.T) {
 	}
 }
 
+// Attaching an asset id another map owns is the client's conflict, not an
+// internal commit error.
+func TestCrossMapAssetAttachIsConflict(t *testing.T) {
+	e := newEnv(t)
+	other, otherHost, err := e.st.CreateMap(contract.CreateMapRequest{WorkspaceID: "ws-1", Title: "Other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := e.st.StoreBlob([]byte("hello"), "text/plain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset.NodeID = other.RootID
+	attach := func(mapID string, a contract.Asset) contract.Op {
+		return contract.Op{ID: store.NewID(contract.PrefixOp), MapID: mapID, Type: contract.OpAssetAttach, Payload: &contract.AssetAttachPayload{Asset: a}}
+	}
+	if _, err := e.st.Submit(other.ID, []contract.Op{attach(other.ID, asset)}, store.SubmitOptions{Actor: contract.Actor{ParticipantID: otherHost.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	stolen := asset
+	stolen.NodeID = e.m.RootID
+	resp, body := e.do("POST", "/m/"+e.token+"/api/maps/"+e.m.ID+"/ops", contract.SubmitRequest{ClientID: "h", Ops: []contract.Op{attach(e.m.ID, stolen)}}, nil)
+	var sub contract.SyncResponse
+	if err := json.Unmarshal(body, &sub); err != nil {
+		t.Fatalf("ops: %d %s", resp.StatusCode, body)
+	}
+	if len(sub.Messages) != 1 || sub.Messages[0].Type != contract.MsgReject {
+		t.Fatalf("cross-map attach not rejected: %d %s", resp.StatusCode, body)
+	}
+	if rej := sub.Messages[0].Payload.(*contract.RejectPayload).Error; rej.Code != contract.ErrConflict || strings.Contains(rej.Message, "commit:") {
+		t.Fatalf("cross-map attach: %s %q, want conflict", rej.Code, rej.Message)
+	}
+}
+
 // Rotate and stop must revoke a link's tokens before they close its sockets:
 // a socket checks its token only when it opens, so one that reconnects in
 // between would otherwise stay open after the link is gone.

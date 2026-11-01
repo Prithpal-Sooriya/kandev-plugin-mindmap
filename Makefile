@@ -3,7 +3,7 @@
 
 # BIN and VERSION must match manifest.yaml's id and version.
 BIN := bin/kandev-plugin-mindmap
-VERSION := 0.3.2
+VERSION := 0.3.3
 STAGE := .build/stage
 PKG_OUT := $(notdir $(BIN))-$(VERSION).tar.gz
 

@@ -335,17 +335,21 @@ func (s *Service) StartCompile(ctx context.Context, spec CompileSpec) ([]store.R
 	if err != nil {
 		return nil, err
 	}
-	// The first wave fits in the free run slots; the rest start as section
-	// runs end. With no slot free, CheckRunCaps refuses the one.
+	// The first wave fits in the free run slots and is reserved up front;
+	// the rest start as section runs end. With no slot free, the
+	// reservation of the one refuses the compile.
 	free, err := s.freeRunSlots(spec.MapID)
 	if err != nil {
 		return nil, err
 	}
 	first := max(1, min(len(sections), MaxCompileParallel, free))
+	var slots *runSlots
 	if !hold {
-		if err := s.CheckRunCaps(spec.MapID, &per, first); err != nil {
+		slots, err = s.reserveRunSlots(spec.MapID, &per, first)
+		if err != nil {
 			return nil, err
 		}
+		defer slots.release()
 	}
 	n := len(sections)
 	synth := CompileSynthesisBudget
@@ -368,6 +372,7 @@ func (s *Service) StartCompile(ctx context.Context, spec CompileSpec) ([]store.R
 		ProfileID: nr.ProfileID, ProfileName: nr.ProfileName, Harness: nr.Harness, StartedBy: spec.StartedBy, Section: per, Sections: sections,
 		DocRootID: prevRoot}
 	if err := s.addDocPlaceholders(&plan, node, prevRec); err != nil {
+		slots.release()
 		coord, _ = s.UpdateRun(coord.ID, func(r *store.RunRecord) bool {
 			r.Status, r.Error = contract.RunFailed, "could not create the doc nodes: "+err.Error()
 			return true
@@ -384,7 +389,7 @@ func (s *Service) StartCompile(ctx context.Context, spec CompileSpec) ([]store.R
 			if s.coordinatorStopped(coord.ID) {
 				break
 			}
-			r, err := s.startSection(ctx, coord, plan, i, false)
+			r, err := s.startSection(ctx, coord, plan, i, false, slots)
 			if r.ID == "" {
 				plan.Sections[i].Error = errText(err)
 				s.Logf("mindmap: compile %s section %q: %v", coord.ID, plan.Sections[i].Title, err)
@@ -394,6 +399,9 @@ func (s *Service) StartCompile(ctx context.Context, spec CompileSpec) ([]store.R
 			}
 			s.savePlan(coord.ID, plan)
 		}
+		// Slots of the first wave that did not start must be free before
+		// the step below reserves its own.
+		slots.release()
 		s.compileStep(ctx, coord.ID)
 	})
 	if c, err := s.Store.GetRun(coord.ID); err == nil {
@@ -433,8 +441,9 @@ func errText(err error) string {
 	return err.Error()
 }
 
-// freeRunSlots is how many more runs the map's concurrency cap allows now
-// (MaxCompileParallel when the map has no cap).
+// freeRunSlots is how many more runs the map's concurrency cap allows now,
+// counting slots other starts have reserved (MaxCompileParallel when the
+// map has no cap). It is a hint: only reserveRunSlots holds a slot.
 func (s *Service) freeRunSlots(mapID string) (int, error) {
 	m, err := s.Store.GetMap(mapID)
 	if err != nil {
@@ -447,11 +456,43 @@ func (s *Service) freeRunSlots(mapID string) (int, error) {
 	if caps.MaxConcurrent <= 0 {
 		return MaxCompileParallel, nil
 	}
+	s.capsMu.Lock()
+	defer s.capsMu.Unlock()
 	active, err := s.Store.CountActiveRuns(mapID)
 	if err != nil {
 		return 0, err
 	}
-	return max(0, caps.MaxConcurrent-active), nil
+	return max(0, caps.MaxConcurrent-active-s.pendingRuns[mapID]), nil
+}
+
+// reserveCompileSlot reserves one run slot for a compile's next section or
+// synthesis run. full is true when the map's concurrency cap has no slot
+// free: the caller waits and steps again once a run ends. Any other
+// refusal (a budget cap) is returned as err.
+func (s *Service) reserveCompileSlot(mapID string, b *contract.Budget) (slot *runSlots, full bool, err error) {
+	slot, err = s.reserveRunSlots(mapID, b, 1)
+	if err == nil {
+		return slot, false, nil
+	}
+	if free, ferr := s.freeRunSlots(mapID); ferr == nil && free == 0 {
+		return nil, true, nil
+	}
+	return nil, false, err
+}
+
+// kickCompiles steps the running compiles on a map other than skip, so a
+// section or synthesis waiting for a run slot starts once an unrelated run
+// on the map ends.
+func (s *Service) kickCompiles(mapID, skip string) {
+	runs, err := s.Store.ListActiveRuns()
+	if err != nil {
+		return
+	}
+	for _, r := range runs {
+		if r.MapID == mapID && r.ID != skip && r.Template == contract.TemplateCompile && isCoordinator(r) && !r.StopRequested {
+			s.syncCompile(r.ID)
+		}
+	}
 }
 
 // previousDocs finds the doc tree an earlier compile of the node wrote
@@ -562,21 +603,22 @@ func (s *Service) addDocPlaceholders(plan *compilePlan, node contract.Node, prev
 	return err
 }
 
-// startSection starts the section run of plan.Sections[i]. noHold skips the
+// startSection starts the section run of plan.Sections[i], taking a slot
+// from slots (nil only for a run held for approval). noHold skips the
 // guest-approval hold (the host approved the coordinator already).
-func (s *Service) startSection(ctx context.Context, coord store.RunRecord, plan compilePlan, i int, noHold bool) (store.RunRecord, error) {
+func (s *Service) startSection(ctx context.Context, coord store.RunRecord, plan compilePlan, i int, noHold bool, slots *runSlots) (store.RunRecord, error) {
 	sec := plan.Sections[i]
 	b := plan.Section
 	return s.StartRun(ctx, RunSpec{NewRun: store.NewRun{MapID: plan.MapID, NodeID: sec.NodeID, ProfileID: plan.ProfileID, ProfileName: plan.ProfileName,
 		Harness: plan.Harness, Template: contract.TemplateCompile, Mode: coord.Mode, Budget: &b, ParentRunID: coord.ID,
-		Goal: fmt.Sprintf("Write the \"%s\" section of the compiled docs.", sec.Title), StartedBy: plan.StartedBy}, CapsChecked: true, NoHold: noHold})
+		Goal: fmt.Sprintf("Write the \"%s\" section of the compiled docs.", sec.Title), StartedBy: plan.StartedBy}, CapsChecked: true, Slots: slots, NoHold: noHold})
 }
 
-func (s *Service) startSynthesis(ctx context.Context, coord store.RunRecord, plan compilePlan) (store.RunRecord, error) {
+func (s *Service) startSynthesis(ctx context.Context, coord store.RunRecord, plan compilePlan, slots *runSlots) (store.RunRecord, error) {
 	b := CompileSynthesisBudget
 	return s.StartRun(ctx, RunSpec{NewRun: store.NewRun{MapID: plan.MapID, NodeID: plan.NodeID, ProfileID: plan.ProfileID, ProfileName: plan.ProfileName,
 		Harness: plan.Harness, Template: contract.TemplateSynthesis, Mode: coord.Mode, Budget: &b, ParentRunID: coord.ID,
-		Goal: "Write the overview index and the single consolidated doc.", StartedBy: plan.StartedBy}, RepoID: plan.RepoID, CapsChecked: true, NoHold: true})
+		Goal: "Write the overview index and the single consolidated doc.", StartedBy: plan.StartedBy}, RepoID: plan.RepoID, CapsChecked: true, Slots: slots, NoHold: true})
 }
 
 // syncCompile advances a compile after one of its runs changed.
@@ -652,12 +694,20 @@ func (s *Service) compileStep(ctx context.Context, coordID string) {
 			if sec.RunID != "" || sec.Error != "" {
 				continue
 			}
-			// Wait for a free run slot: the map's cap counts every active
-			// run, so the next section starts once an earlier one ends.
-			if active >= MaxCompileParallel || s.coordinatorStopped(coordID) || s.CheckRunCaps(plan.MapID, &plan.Section, 1) != nil {
+			if active >= MaxCompileParallel || s.coordinatorStopped(coordID) {
 				break
 			}
-			r, err := s.startSection(ctx, coord, plan, i, true)
+			// Wait for a free run slot: the map's cap counts every active
+			// run, so the next section starts once a run on the map ends.
+			slot, full, err := s.reserveCompileSlot(plan.MapID, &plan.Section)
+			if full {
+				break
+			}
+			var r store.RunRecord
+			if err == nil {
+				r, err = s.startSection(ctx, coord, plan, i, true, slot)
+				slot.release()
+			}
 			if r.ID == "" {
 				sec.Error = errText(err)
 			} else {
@@ -669,19 +719,31 @@ func (s *Service) compileStep(ctx context.Context, coordID string) {
 		}
 		kids, _ = s.Store.ChildRuns(coordID)
 		if plan.SynthRunID == "" && plan.SynthErr == "" && !s.coordinatorStopped(coordID) && s.sectionsSettled(plan, runOf) {
+			changed := true
 			if s.anySectionSucceeded(plan, runOf) {
-				r, err := s.startSynthesis(ctx, coord, plan)
-				if r.ID == "" {
-					plan.SynthErr = "could not start the synthesis agent: " + errText(err)
-				} else {
-					plan.SynthRunID = r.ID
-					s.stopIfCoordinatorStopped(ctx, coordID, r)
+				synth := CompileSynthesisBudget
+				slot, full, err := s.reserveCompileSlot(plan.MapID, &synth)
+				changed = !full // full: start it once a run on the map ends
+				if changed {
+					var r store.RunRecord
+					if err == nil {
+						r, err = s.startSynthesis(ctx, coord, plan, slot)
+						slot.release()
+					}
+					if r.ID == "" {
+						plan.SynthErr = "could not start the synthesis agent: " + errText(err)
+					} else {
+						plan.SynthRunID = r.ID
+						s.stopIfCoordinatorStopped(ctx, coordID, r)
+					}
 				}
 			} else {
 				plan.SynthErr = "no section agent finished, so there is nothing to synthesise"
 			}
-			s.savePlan(coordID, plan)
-			kids, _ = s.Store.ChildRuns(coordID)
+			if changed {
+				s.savePlan(coordID, plan)
+				kids, _ = s.Store.ChildRuns(coordID)
+			}
 		}
 	}
 
