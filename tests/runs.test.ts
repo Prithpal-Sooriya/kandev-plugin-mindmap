@@ -19,10 +19,10 @@ const node = { id: "nd_aaaaaaaaaaaa", kind: "idea", title: "Pricing" } as const;
 const ctx = (over: Partial<DraftContext> = {}): DraftContext => ({ node, rootId: "nd_rootrootroot", profiles: PROFILES, ...over });
 
 describe("run dialog: profiles", () => {
-  it("prefers the remembered profile, then Claude, then the first one", () => {
+  it("prefers the remembered profile, then Pi, then Cursor, then Claude, then the first one", () => {
     expect(pickProfile(PROFILES, "p-pi")).toBe("p-pi");
-    expect(pickProfile(PROFILES, "gone")).toBe("p-claude");
-    expect(pickProfile(PROFILES.filter((p) => p.harness !== "claude"))).toBe("p-cursor");
+    expect(pickProfile(PROFILES, "gone")).toBe("p-pi");
+    expect(pickProfile(PROFILES.filter((p) => p.harness !== "pi"))).toBe("p-cursor");
     expect(pickProfile([])).toBe("");
   });
 
@@ -30,7 +30,7 @@ describe("run dialog: profiles", () => {
     const s = defaultSwarm(PROFILES);
     expect(s.map((x) => x.lens)).toEqual(["researcher", "skeptic", "examples_hunter"]);
     expect(new Set(s.map((x) => x.profileId)).size).toBe(3);
-    expect(s[0]!.profileId).toBe("p-claude");
+    expect(s[0]!.profileId).toBe("p-pi");
     expect(defaultSwarm([PROFILES[0]!]).every((x) => x.profileId === "p-cursor")).toBe(true);
   });
 
@@ -48,11 +48,11 @@ describe("run dialog: drafts and requests", () => {
     expect(buildRequest(d)).toEqual({
       kind: "run",
       req: {
-        node_id: node.id, template: "critique", profile_id: "p-claude", mode: "apply", goal: "Find weak spots.",
+        node_id: node.id, template: "critique", profile_id: "p-pi", mode: "apply", goal: "Find weak spots.",
         budget: { max_nodes: 20, max_depth: 3, max_subagents: 1, max_minutes: 15 },
       },
     });
-    expect(describeDraft(d, PROFILES)).toBe("Start Claude Researcher");
+    expect(describeDraft(d, PROFILES)).toBe("Start Pi Flash");
   });
 
   it("garden runs on the root and always proposes", () => {

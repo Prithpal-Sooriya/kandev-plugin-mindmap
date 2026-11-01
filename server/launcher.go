@@ -119,18 +119,42 @@ func (p *mindmapPlugin) cachedProfiles(ctx context.Context) ([]contract.AgentPro
 	return list, nil
 }
 
-// defaultProfile is the plugin config's agent_profile.
+// defaultProfile is the plugin config's agent_profile, falling back to a pi/cursor/claude profile.
 func (p *mindmapPlugin) defaultProfile(ctx context.Context) string {
 	h := p.Host()
 	if h == nil {
 		return ""
 	}
 	cfg, err := h.GetConfig(ctx)
-	if err != nil {
+	if err == nil {
+		if v, _ := cfg["agent_profile"].(string); v != "" {
+			if trimmed := strings.TrimSpace(v); trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+
+	profiles, err := p.cachedProfiles(ctx)
+	if err != nil || len(profiles) == 0 {
 		return ""
 	}
-	v, _ := cfg["agent_profile"].(string)
-	return strings.TrimSpace(v)
+
+	for _, p := range profiles {
+		if p.Harness == contract.HarnessPi {
+			return p.ID
+		}
+	}
+	for _, p := range profiles {
+		if p.Harness == contract.HarnessCursor {
+			return p.ID
+		}
+	}
+	for _, p := range profiles {
+		if p.Harness == contract.HarnessClaude {
+			return p.ID
+		}
+	}
+	return profiles[0].ID
 }
 
 // configExportDir is the plugin config's export_dir.

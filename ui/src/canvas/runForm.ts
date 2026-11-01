@@ -92,7 +92,10 @@ function budgetDraft(b: Budget): BudgetDraft {
 /** The preferred profile if it still exists, else the first Claude, else the first one. */
 export function pickProfile(profiles: AgentProfile[], preferred?: string): string {
   if (preferred && profiles.some((p) => p.id === preferred)) return preferred;
-  return (profiles.find((p) => p.harness === "claude") ?? profiles[0])?.id ?? "";
+  return (profiles.find((p) => p.harness === "pi") ??
+    profiles.find((p) => p.harness === "cursor") ??
+    profiles.find((p) => p.harness === "claude") ??
+    profiles[0])?.id ?? "";
 }
 
 /**

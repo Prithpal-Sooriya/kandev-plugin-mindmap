@@ -269,6 +269,7 @@ function TimeTravel(props: { ctl: MapController }) {
   
   const minRev = 1;
   const maxRev = ctl.engine.confirmed.rev;
+  const isHost = !!ctl.engine.participant?.is_host;
   
   return (
     <div className="mm-field mm-time-travel">
@@ -288,18 +289,20 @@ function TimeTravel(props: { ctl: MapController }) {
       <div className="mm-row mm-small mm-muted">
         <span>Rev {ctl.replayRev} / {maxRev}</span>
         <span className="mm-spacer" />
-        <button 
-          type="button" 
-          className="mm-btn mm-btn-xs" 
-          onClick={async () => {
-            if (ctl.host.api.forkMap) {
-              const m = await ctl.host.api.forkMap(ctl.mapId, ctl.replayRev!);
-              ctl.host.navigate(`/mindmap?map=${m.id}`);
-            }
-          }}
-        >
-          Fork from here
-        </button>
+        {isHost && (
+          <button 
+            type="button" 
+            className="mm-btn mm-btn-xs" 
+            onClick={async () => {
+              if (ctl.host.api.forkMap) {
+                const m = await ctl.host.api.forkMap(ctl.mapId, ctl.replayRev!);
+                ctl.host.navigate(`/mindmap?map=${m.id}`);
+              }
+            }}
+          >
+            Fork from here
+          </button>
+        )}
       </div>
     </div>
   );

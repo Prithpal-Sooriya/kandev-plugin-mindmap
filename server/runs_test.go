@@ -111,18 +111,19 @@ func newMapInWorkspace(t *testing.T, p *mindmapPlugin, ws string) contract.Map {
 func TestLaunchErrors(t *testing.T) {
 	p, h := newTestPluginHost(t)
 	m := newMapViaAPI(t, p)
-	// No profile and no default.
-	st, b := api(t, p, "POST", "/api/maps/"+m.ID+"/runs", map[string]any{"node_id": m.RootID, "template": "research"})
-	if st != 400 || !strings.Contains(string(b), "profile_id") {
-		t.Fatalf("no profile: %d %s", st, b)
-	}
-	// The plugin config default applies.
-	h.config["agent_profile"] = "prof-pi"
+	// When no profile is passed, the fallback default applies (pi).
 	runs := apiRuns(t, p, "/api/maps/"+m.ID+"/runs", map[string]any{"node_id": m.RootID, "template": "research"})
 	if runs[0].Harness != contract.HarnessPi {
+		t.Fatalf("fallback default: %+v", runs[0])
+	}
+
+	// The plugin config default overrides the fallback.
+	h.config["agent_profile"] = "prof-claude"
+	runs = apiRuns(t, p, "/api/maps/"+m.ID+"/runs", map[string]any{"node_id": m.RootID, "template": "research"})
+	if runs[0].Harness != contract.HarnessClaude {
 		t.Fatalf("config default: %+v", runs[0])
 	}
-	st, b = api(t, p, "POST", "/api/maps/"+m.ID+"/runs", map[string]any{"node_id": m.RootID, "template": "research", "profile_id": "nope"})
+	st, b := api(t, p, "POST", "/api/maps/"+m.ID+"/runs", map[string]any{"node_id": m.RootID, "template": "research", "profile_id": "nope"})
 	if st != 400 || !strings.Contains(string(b), "unknown agent profile") {
 		t.Fatalf("unknown profile: %d %s", st, b)
 	}
