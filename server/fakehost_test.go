@@ -23,6 +23,8 @@ type fakeHost struct {
 	config    map[string]any
 	createErr error
 	sendErr   error
+	// createCtxErrs is ctx.Err() as each Create saw it.
+	createCtxErrs []error
 	// onCreate runs inside Create before it returns (simulates events that
 	// arrive before the task id is known).
 	onCreate func(taskID string)
@@ -107,8 +109,9 @@ func (t fakeTasks) List(context.Context, pluginsdk.TaskFilter, pluginsdk.Page) (
 func (t fakeTasks) Get(_ context.Context, id string) (*pluginsdk.Task, error) {
 	return &pluginsdk.Task{ID: id}, nil
 }
-func (t fakeTasks) Create(_ context.Context, in pluginsdk.CreateTaskInput) (*pluginsdk.Task, error) {
+func (t fakeTasks) Create(ctx context.Context, in pluginsdk.CreateTaskInput) (*pluginsdk.Task, error) {
 	t.h.mu.Lock()
+	t.h.createCtxErrs = append(t.h.createCtxErrs, ctx.Err())
 	if t.h.createErr != nil {
 		err := t.h.createErr
 		t.h.mu.Unlock()

@@ -18,15 +18,26 @@ import (
 	"kandev-plugin-mindmap/server/contract"
 )
 
-func (s *Store) blobPath(sha string) string {
-	if len(sha) < 2 {
-		return filepath.Join(s.dataDir, "assets", "_invalid")
+// errBadBlob is returned for an asset hash that cannot name a blob file.
+var errBadBlob = contract.FieldErr(contract.ErrNotFound, "sha256", "invalid asset hash")
+
+// blobPath returns where the bytes with this sha256 live. It refuses
+// anything but a lowercase hex hash, and any path that would leave the
+// assets folder, since stored rows may predate validation.
+func (s *Store) blobPath(sha string) (string, error) {
+	if !contract.ValidSHA256(sha) {
+		return "", errBadBlob
 	}
-	return filepath.Join(s.dataDir, "assets", sha[:2], sha)
+	root := filepath.Clean(filepath.Join(s.dataDir, "assets"))
+	p := filepath.Clean(filepath.Join(root, sha[:2], sha))
+	if rel, err := filepath.Rel(root, p); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", errBadBlob
+	}
+	return p, nil
 }
 
 // BlobPath returns where the bytes with this sha256 live.
-func (s *Store) BlobPath(sha string) string { return s.blobPath(sha) }
+func (s *Store) BlobPath(sha string) (string, error) { return s.blobPath(sha) }
 
 // SniffMIME returns the allowed MIME type for data, preferring the declared
 // type when the bytes agree with it. ok is false when the type is not in
@@ -70,7 +81,10 @@ func (s *Store) StoreBlob(data []byte, mime string) (contract.Asset, error) {
 	}
 	sum := sha256.Sum256(data)
 	sha := hex.EncodeToString(sum[:])
-	path := s.blobPath(sha)
+	path, err := s.blobPath(sha)
+	if err != nil {
+		return contract.Asset{}, err
+	}
 	if _, err := os.Stat(path); err != nil {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return contract.Asset{}, err
@@ -102,5 +116,9 @@ func (s *Store) AssetFile(mapID, assetID string) (contract.Asset, string, error)
 	if err != nil {
 		return a, "", err
 	}
-	return a, s.blobPath(a.SHA256), nil
+	p, err := s.blobPath(a.SHA256)
+	if err != nil {
+		return a, "", errNotFound("asset %s not found", assetID)
+	}
+	return a, p, nil
 }

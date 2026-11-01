@@ -25,6 +25,20 @@ func checkLen(field, s string, max int, required bool) error {
 	return nil
 }
 
+// ValidSHA256 reports whether s is 64 lowercase hex digits. Asset hashes
+// name files on disk, so nothing else may pass.
+func ValidSHA256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func checkID(field, prefix, id string) error {
 	if !ValidID(prefix, id) {
 		return FieldErr(ErrInvalidOp, field, "expected a %s_ id, got %q", prefix, id)
@@ -407,8 +421,8 @@ func (p *AssetAttachPayload) Validate() error {
 	if a.Bytes <= 0 || a.Bytes > MaxAssetBytes {
 		return FieldErr(ErrTooLarge, "asset.bytes", "asset must be 1..%d bytes", MaxAssetBytes)
 	}
-	if len(a.SHA256) != 64 {
-		return FieldErr(ErrInvalidOp, "asset.sha256", "expected a hex SHA-256")
+	if !ValidSHA256(a.SHA256) {
+		return FieldErr(ErrInvalidOp, "asset.sha256", "expected a lowercase hex SHA-256")
 	}
 	if a.SourceURL != "" {
 		if err := ValidateHTTPURL("asset.source_url", a.SourceURL); err != nil {

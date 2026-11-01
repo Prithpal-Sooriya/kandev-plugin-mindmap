@@ -448,16 +448,16 @@ func TestStopAndMessage(t *testing.T) {
 	if st, _ := api(t, p, "POST", "/api/runs/"+r.ID+"/stop", nil); st != 204 || len(h.Sent()) != 2 {
 		t.Fatalf("second stop sent another message")
 	}
-	// A message re-opens the run with a fresh token for the bridge.
-	if st, b := api(t, p, "POST", "/api/runs/"+r.ID+"/message", map[string]any{"text": "Actually, continue."}); st != 204 {
+	// A message does not revive a stopped run: no message, no fresh token.
+	if st, b := api(t, p, "POST", "/api/runs/"+r.ID+"/message", map[string]any{"text": "Actually, continue."}); st != 409 {
 		t.Fatalf("message after stop: %d %s", st, b)
 	}
-	if s := h.Sent(); !strings.Contains(s[2].Text, "mmr1.") {
-		t.Fatalf("no fresh token: %q", s[2].Text)
+	if s := h.Sent(); len(s) != 2 {
+		t.Fatalf("message to a stopped run was sent: %+v", s)
 	}
 	state(p, r.TaskID, "RUNNING")
-	if got := getRun(t, p, r.ID); got.Status != contract.RunRunning || got.StopRequested {
-		t.Fatalf("re-opened: %s %v", got.Status, got.StopRequested)
+	if got := getRun(t, p, r.ID); got.Status != contract.RunStopped || !got.StopRequested {
+		t.Fatalf("stopped run revived: %s %v", got.Status, got.StopRequested)
 	}
 	if st, _ := api(t, p, "POST", "/api/runs/run_missing0000/stop", nil); st != 404 {
 		t.Fatalf("missing run: %d", st)

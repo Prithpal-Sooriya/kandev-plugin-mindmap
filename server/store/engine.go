@@ -355,6 +355,17 @@ func (t *txn) apply(o contract.Op, locked LockFunc) (contract.Op, bool, error) {
 	return o, rebased, nil
 }
 
+// hostActor reports whether a is the map's host writing directly. Agent runs
+// never count, even when the host started them.
+func (s *Store) hostActor(mapID string, a contract.Actor) bool {
+	if a.RunID != "" || a.ParticipantID == "" {
+		return false
+	}
+	var host int
+	err := s.db.QueryRow(`SELECT is_host FROM participants WHERE id = ? AND map_id = ?`, a.ParticipantID, mapID).Scan(&host)
+	return err == nil && host == 1
+}
+
 func lockErr(field string) error {
 	return contract.FieldErr(contract.ErrLocked, field, "someone else is editing this field; try again shortly")
 }
@@ -366,6 +377,13 @@ func (t *txn) mutate(o *contract.Op, locked LockFunc) ([]contract.Op, bool, erro
 	actor := o.Actor
 	switch p := o.Payload.(type) {
 	case *contract.MapUpdatePayload:
+		if (p.RepoID != nil || p.Settings != nil) && !t.s.hostActor(st.m.ID, actor) {
+			field := "payload.settings"
+			if p.Settings == nil {
+				field = "payload.repo_id"
+			}
+			return nil, false, contract.FieldErr(contract.ErrForbidden, field, "only the host can change the map's repository or settings")
+		}
 		t.touchMap()
 		inv := &contract.MapUpdatePayload{}
 		if p.Title != nil {
@@ -604,7 +622,11 @@ func (t *txn) mutate(o *contract.Op, locked LockFunc) ([]contract.Op, bool, erro
 				}
 			}
 		}
-		if _, err := os.Stat(t.s.blobPath(a.SHA256)); err != nil {
+		blob, err := t.s.blobPath(a.SHA256)
+		if err != nil {
+			return nil, false, contract.FieldErr(contract.ErrInvalidOp, "payload.asset.sha256", "expected a lowercase hex SHA-256")
+		}
+		if _, err := os.Stat(blob); err != nil {
 			return nil, false, contract.FieldErr(contract.ErrNotFound, "payload.asset.sha256", "no uploaded bytes with this hash; upload first")
 		}
 		if a.Author.ParticipantID == "" {

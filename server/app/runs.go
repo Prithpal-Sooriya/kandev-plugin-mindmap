@@ -94,8 +94,39 @@ func (s *Service) parentIsCoordinator(runID string) bool {
 	return err == nil && isCoordinator(r)
 }
 
-// launch creates the run's Kandev task and records it.
+// LaunchTimeout bounds one Kandev task creation.
+const LaunchTimeout = 60 * time.Second
+
+// coordinatorStopped reports whether a swarm or compile coordinator was
+// stopped, so its loops start no more children. Its status alone is not
+// enough: it is summed from the children and may read failed while later
+// children are still to start.
+func (s *Service) coordinatorStopped(coordID string) bool {
+	c, err := s.Store.GetRun(coordID)
+	return err != nil || c.StopRequested
+}
+
+// stopIfCoordinatorStopped stops a child that was started while its
+// coordinator was being stopped (the coordinator's stop only reached the
+// children that existed then).
+func (s *Service) stopIfCoordinatorStopped(ctx context.Context, coordID string, child store.RunRecord) store.RunRecord {
+	if child.ID == "" || child.Status.Terminal() || !s.coordinatorStopped(coordID) {
+		return child
+	}
+	r, err := s.StopRun(ctx, child.ID, "", "")
+	if err != nil {
+		s.Logf("mindmap: stop child %s of stopped coordinator %s: %v", child.ID, coordID, err)
+		return child
+	}
+	return r
+}
+
+// launch creates the run's Kandev task and records it. The task is created
+// on a context detached from the caller's: an HTTP request (the api webhook
+// is cut at about 25 s) must not cancel a launch half way.
 func (s *Service) launch(ctx context.Context, run store.RunRecord, node contract.Node, token, repoID string) (store.RunRecord, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), LaunchTimeout)
+	defer cancel()
 	res, err := s.Launcher.Launch(ctx, LaunchRequest{
 		Run:         run,
 		Title:       taskTitle(run, node),
@@ -175,11 +206,17 @@ func (s *Service) ApproveRun(ctx context.Context, runID string) ([]store.RunReco
 		}
 		var out []store.RunRecord
 		for _, k := range held {
+			if s.coordinatorStopped(run.ID) {
+				break
+			}
 			r, err := s.ApproveRun(ctx, k.ID)
 			if err != nil && len(r) == 0 {
 				return out, err
 			}
 			out = append(out, r...)
+		}
+		if len(out) == 0 && s.coordinatorStopped(run.ID) {
+			return nil, contract.Errf(contract.ErrConflict, "this swarm or compile was stopped")
 		}
 		if len(held) == 0 {
 			return nil, contract.Errf(contract.ErrConflict, "no run in this swarm is waiting for approval")
@@ -189,26 +226,39 @@ func (s *Service) ApproveRun(ctx context.Context, runID string) ([]store.RunReco
 	if run.Status != contract.RunWaiting || run.WaitingReason != contract.WaitingApproval || run.TaskID != "" {
 		return nil, contract.Errf(contract.ErrConflict, "this run is not waiting for approval")
 	}
+	if run.ParentRunID != "" && s.coordinatorStopped(run.ParentRunID) {
+		return nil, contract.Errf(contract.ErrConflict, "this run's swarm or compile was stopped")
+	}
 	if err := s.CheckRunCaps(run.MapID, &run.Budget, 1); err != nil {
 		return nil, err
 	}
-	token, err := s.Store.IssueRunToken(run, s.Port())
-	if err != nil {
-		return nil, err
-	}
-	run, err = s.UpdateRun(run.ID, func(r *store.RunRecord) bool {
-		if r.Status != contract.RunWaiting || r.WaitingReason != contract.WaitingApproval {
+	// Only the caller whose write moved the run out of waiting(approval)
+	// launches it; a concurrent approval reads the winner's queued row and
+	// must not launch a second task.
+	run, saved, err := s.updateRun(run.ID, func(r *store.RunRecord) bool {
+		if r.Status != contract.RunWaiting || r.WaitingReason != contract.WaitingApproval || r.TaskID != "" {
 			return false
 		}
 		r.Status, r.WaitingReason = contract.RunQueued, ""
 		return true
 	})
-	if err != nil || run.Status != contract.RunQueued {
-		_ = s.Store.RevokeRunTokens(run.ID)
-		if err != nil {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
+	}
+	if !saved {
 		return nil, contract.Errf(contract.ErrConflict, "this run is not waiting for approval")
+	}
+	if run.ParentRunID != "" {
+		s.syncCoordinator(run.ParentRunID)
+	}
+	token, err := s.Store.IssueRunToken(run, s.Port())
+	if err != nil {
+		run, _ = s.UpdateRun(run.ID, func(r *store.RunRecord) bool {
+			r.Status, r.Error = contract.RunFailed, "could not issue a run token: "+err.Error()
+			return true
+		})
+		s.SetRunNodeStatus(run)
+		return []store.RunRecord{run}, err
 	}
 	node, _ := s.Store.Node(run.MapID, run.NodeID)
 	s.SetRunNodeStatus(run)
@@ -516,6 +566,9 @@ func (s *Service) StartSwarm(ctx context.Context, spec SwarmSpec) ([]store.RunRe
 	}
 	out := []store.RunRecord{coord}
 	for i, a := range spec.Agents {
+		if s.coordinatorStopped(coord.ID) {
+			break
+		}
 		m := members[i]
 		b := per
 		r, err := s.StartRun(ctx, RunSpec{NewRun: store.NewRun{MapID: spec.MapID, NodeID: branches[i], ProfileID: m.ProfileID, ProfileName: m.ProfileName,
@@ -525,7 +578,7 @@ func (s *Service) StartSwarm(ctx context.Context, spec SwarmSpec) ([]store.RunRe
 			s.Logf("mindmap: swarm %s lens %s: %v", swarmID, a.Lens, err)
 			continue
 		}
-		out = append(out, r)
+		out = append(out, s.stopIfCoordinatorStopped(ctx, coord.ID, r))
 	}
 	s.syncCoordinator(coord.ID)
 	if c, err := s.Store.GetRun(coord.ID); err == nil {
@@ -715,10 +768,17 @@ func (s *Service) StopRun(ctx context.Context, runID, by, reason string) (store.
 	return run, nil
 }
 
+// messageClosed reports whether a run can no longer be messaged: it was
+// stopped (by a person, the kill switch or its time budget) or it failed.
+// Its tokens stay revoked; continuing means starting a new run.
+func messageClosed(r store.RunRecord) bool {
+	return r.StopRequested || r.Status == contract.RunStopped || r.Status == contract.RunFailed
+}
+
 // MessageRun sends a human's message to a run's agent. A coordinator
-// forwards it to every lens run that has a task. Messaging a stopped run
-// re-opens it: the stop flag is cleared and a bridge run gets a fresh token
-// (its old one was revoked), so the agent can write again.
+// forwards it to every lens run that has a task and is still open.
+// Messaging a stopped or failed run is a conflict: a message never revives
+// a run or issues it a new token.
 func (s *Service) MessageRun(ctx context.Context, runID, by, text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -731,11 +791,14 @@ func (s *Service) MessageRun(ctx context.Context, runID, by, text string) error 
 	if err != nil {
 		return err
 	}
+	if messageClosed(run) {
+		return contract.Errf(contract.ErrConflict, "this run was stopped or failed; start a new run to continue")
+	}
 	if isCoordinator(run) {
 		kids, _ := s.Store.ChildRuns(run.ID)
 		sent := 0
 		for _, k := range kids {
-			if k.TaskID == "" {
+			if k.TaskID == "" || messageClosed(k) {
 				continue
 			}
 			if err := s.MessageRun(ctx, k.ID, by, text); err != nil {
@@ -752,23 +815,6 @@ func (s *Service) MessageRun(ctx context.Context, runID, by, text string) error 
 		return contract.Errf(contract.ErrConflict, "this run has no Kandev task to message")
 	}
 	msg := fmt.Sprintf("Message from %s in the mind map:\n\n%s", s.actorName(by), text)
-	if run.StopRequested {
-		run, err = s.UpdateRun(run.ID, func(r *store.RunRecord) bool {
-			r.StopRequested = false
-			if r.Error != "" && r.Status == contract.RunStopped {
-				r.Error = ""
-			}
-			return true
-		})
-		if err != nil {
-			return err
-		}
-		if run.Transport != contract.TransportMCP {
-			if tok, err := s.Store.IssueRunToken(run, s.Port()); err == nil {
-				msg += "\n\nYour previous run token was revoked. Use this one from now on:\n```\n" + tok + "\n```"
-			}
-		}
-	}
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
 	if err := s.Messenger.Send(sctx, run.TaskID, run.SessionID, msg); err != nil {

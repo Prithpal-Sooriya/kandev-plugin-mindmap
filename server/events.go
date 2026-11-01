@@ -64,7 +64,7 @@ func sessionError(payload map[string]any) string {
 			}
 		}
 	}
-	msg = strings.TrimSpace(msg)
+	msg = strings.TrimSpace(contract.RedactTokens(msg))
 	if r := []rune(msg); len(r) > 500 {
 		msg = string(r[:500])
 	}
@@ -130,7 +130,7 @@ func (p *mindmapPlugin) onMessage(ctx context.Context, run store.RunRecord, even
 	}
 	content := str(pl, "content")
 	if eventType == "message.added" && strings.TrimSpace(content) != "" {
-		text := content
+		text := contract.RedactTokens(content)
 		if len(text) > 4000 {
 			text = text[:4000] + " …"
 		}
