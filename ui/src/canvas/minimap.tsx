@@ -35,12 +35,13 @@ export function Minimap(props: { ctl: MapController; region: { x: number; y: num
       <svg viewBox={`${bx} ${by} ${bw} ${bh}`} preserveAspectRatio="xMidYMid meet">
         <rect x={bx} y={by} width={bw} height={bh} fill="transparent" />
         {/* Draw a simplified tree or just the bounds */}
-        <rect x={bounds.x} y={bounds.y} width={bounds.w} height={bounds.h} fill="var(--bg-muted)" rx="20" />
+        <rect x={bounds.x} y={bounds.y} width={bounds.w} height={bounds.h} fill="var(--muted)" rx="20" />
         
-        {/* Viewport */}
-        <rect 
-          x={region.x} y={region.y} width={region.w} height={region.h} 
-          fill="none" stroke="var(--primary)" strokeWidth={Math.max(bw, bh) * 0.01} 
+        {/* Viewport. The canvas updates this rect every frame (see #mm-minimap-vp). */}
+        <rect
+          id="mm-minimap-vp"
+          x={region.x} y={region.y} width={region.w} height={region.h}
+          fill="none" stroke="var(--primary)" strokeWidth={Math.max(bw, bh) * 0.01}
         />
         
         {/* Agent dots */}

@@ -64,7 +64,7 @@ in `.kandev-sdk-ref` (the SDK is not published as its own module yet).
 ```sh
 make test          # go test -race, tsc, vitest
 make package-host  # builds kandev-plugin-mindmap-<version>.tar.gz for this platform
-curl -F package=@kandev-plugin-mindmap-0.3.0.tar.gz http://127.0.0.1:38430/api/plugins/install
+curl -F package=@kandev-plugin-mindmap-0.3.1.tar.gz http://127.0.0.1:38430/api/plugins/install
 ```
 
 UI development without Kandev or the Go backend:
