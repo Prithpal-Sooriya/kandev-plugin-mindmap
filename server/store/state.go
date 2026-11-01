@@ -348,11 +348,25 @@ func writeLink(tx execer, l *contract.Link, rev int64) error {
 	return err
 }
 
+// writeAsset inserts an asset row or, for the same map, updates its node,
+// caption and detached flag. An id already used by another map's asset is
+// a conflict: that row is left alone.
 func writeAsset(tx execer, mapID string, a contract.Asset, detached bool) error {
-	_, err := tx.Exec(`INSERT INTO assets (id, map_id, node_id, kind, mime, bytes, sha256, filename, caption, source_url, width, height,
+	res, err := tx.Exec(`INSERT INTO assets (id, map_id, node_id, kind, mime, bytes, sha256, filename, caption, source_url, width, height,
 		author_participant_id, author_run_id, detached, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT (id) DO UPDATE SET node_id=excluded.node_id, caption=excluded.caption, detached=excluded.detached`,
+		ON CONFLICT (id) DO UPDATE SET node_id=excluded.node_id, caption=excluded.caption, detached=excluded.detached
+		WHERE assets.map_id = excluded.map_id`,
 		a.ID, mapID, a.NodeID, string(a.Kind), a.MIME, a.Bytes, a.SHA256, nullStr(a.Filename), nullStr(a.Caption), nullStr(a.SourceURL),
 		a.Width, a.Height, a.Author.ParticipantID, nullStr(a.Author.RunID), boolInt(detached), fmtTime(a.CreatedAt))
-	return err
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return contract.FieldErr(contract.ErrConflict, "payload.asset.id", "asset id %s belongs to another map", a.ID)
+	}
+	return nil
 }
