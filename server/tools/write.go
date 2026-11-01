@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"kandev-plugin-mindmap/server/app"
 	"kandev-plugin-mindmap/server/contract"
 	"kandev-plugin-mindmap/server/store"
 )
@@ -459,6 +460,9 @@ func (t *Tools) spawn(ctx context.Context, s *session, a any) (contract.ToolResu
 	if left != nil && left.Subagents >= 0 && len(args.Agents) > left.Subagents {
 		return contract.ToolResult{}, contract.FieldErr(contract.ErrBudgetExceeded, "agents", "you asked for %d sub-agents but %d are left", len(args.Agents), left.Subagents)
 	}
+	if err := t.svc.CheckRunCaps(s.mapID, nil, len(args.Agents)); err != nil {
+		return contract.ToolResult{}, err
+	}
 	nodes := make([]string, len(args.Agents))
 	for i, ag := range args.Agents {
 		id, err := t.writeNode(s, fmt.Sprintf("agents[%d].node_id", i), ag.NodeID, "")
@@ -478,14 +482,20 @@ func (t *Tools) spawn(ctx context.Context, s *session, a any) (contract.ToolResu
 		if mode == "" {
 			mode = s.run.Mode
 		}
-		harness := contract.HarnessOther
+		// The service resolves the profile's name and harness from Kandev;
+		// these are the fallbacks when it cannot (no host).
+		harness, name := contract.HarnessOther, ""
 		if profile == s.run.ProfileID {
-			harness = s.run.Harness
+			harness, name = s.run.Harness, s.run.ProfileName
 		}
-		r, err := t.svc.StartRun(ctx, store.NewRun{MapID: s.mapID, NodeID: nodes[i], WorkspaceID: s.workspaceID, ProfileID: profile,
-			ProfileName: s.run.ProfileName, Harness: harness, Template: ag.Template, Lens: ag.Lens, Mode: mode, Goal: ag.Goal, Budget: ag.Budget,
-			ParentRunID: s.run.ID, SwarmID: s.run.SwarmID, Transport: s.run.Transport, StartedBy: s.run.StartedBy})
-		if err != nil {
+		tmpl := ag.Template
+		if tmpl == "" {
+			tmpl = contract.TemplateResearch
+		}
+		r, err := t.svc.StartRun(ctx, app.RunSpec{NewRun: store.NewRun{MapID: s.mapID, NodeID: nodes[i], WorkspaceID: s.workspaceID, ProfileID: profile,
+			ProfileName: name, Harness: harness, Template: tmpl, Lens: ag.Lens, Mode: mode, Goal: ag.Goal, Budget: ag.Budget,
+			ParentRunID: s.run.ID, SwarmID: s.run.SwarmID, StartedBy: s.run.StartedBy}})
+		if err != nil && r.ID == "" {
 			if len(runs) > 0 {
 				e := *contract.AsError(err)
 				e.Message = fmt.Sprintf("%s (agents[0..%d] were spawned: %s)", e.Message, i-1, strings.Join(lines, "; "))
@@ -494,7 +504,11 @@ func (t *Tools) spawn(ctx context.Context, s *session, a any) (contract.ToolResu
 			return contract.ToolResult{}, err
 		}
 		runs = append(runs, map[string]any{"run_id": r.ID, "node_id": r.NodeID, "task_id": r.TaskID, "status": r.Status})
-		lines = append(lines, fmt.Sprintf("%s on [%s] (%s)", r.ID, r.NodeID, r.Status))
+		ln := fmt.Sprintf("%s on [%s] (%s)", r.ID, r.NodeID, r.Status)
+		if r.Error != "" {
+			ln += ": " + r.Error
+		}
+		lines = append(lines, ln)
 	}
 	text := "spawned:\n- " + strings.Join(lines, "\n- ")
 	if bl := t.budget(s); bl != nil && bl.Subagents >= 0 {

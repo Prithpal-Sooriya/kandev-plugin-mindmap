@@ -12,7 +12,7 @@ import (
 // runs stopped. Implement StopAllRuns to message agents (or otherwise stop
 // the Kandev tasks). Do not call Service.StopAllRuns from the hook: Service
 // calls the hook, then marks every non-terminal run stopped and revokes its
-// run token. Leave Service.Stops nil until Phase 2a provides an implementation.
+// run token. New sets it to RunStopper.
 type StopAllRuns interface {
 	StopAllRuns(ctx context.Context) error
 }

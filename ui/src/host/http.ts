@@ -2,7 +2,7 @@
 // MapApi built on top of a `/api/*` caller.
 import {
   CONTRACT_HEADER, CONTRACT_VERSION, ContractError, type ActivityEvent, type AgentProfile, type ErrorCode, type MapSummary, type MindMap,
-  type Op, type Proposal, type Run, type ShareLink,
+  type Op, type Proposal, type RepoInfo, type Run, type ShareLink, type TaskRunInfo,
 } from "../contract";
 import type { MapApi } from "./adapter";
 
@@ -42,6 +42,16 @@ export function mapApi(call: ApiCall): MapApi {
     reviewProposal: (id, req) => call<Proposal>("POST", `/proposals/${encodeURIComponent(id)}/review`, req),
     startRun: async (mapId, req) =>
       (await call<{ runs: Run[] }>("POST", `/maps/${encodeURIComponent(mapId)}/runs`, req)).runs,
+    startSwarm: async (mapId, req) =>
+      (await call<{ runs: Run[] }>("POST", `/maps/${encodeURIComponent(mapId)}/swarms`, req)).runs,
+    stopRun: (runId) => call<void>("POST", `/runs/${encodeURIComponent(runId)}/stop`),
+    messageRun: (runId, text) => call<void>("POST", `/runs/${encodeURIComponent(runId)}/message`, { text }),
+    answerQuestion: async (mapId, nodeId, answer) => {
+      await call<unknown>("POST", `/maps/${encodeURIComponent(mapId)}/nodes/${encodeURIComponent(nodeId)}/answer`, { answer });
+    },
+    repos: (mapId) => call<RepoInfo[]>("GET", `/repos?map_id=${encodeURIComponent(mapId)}`),
+    taskRun: (taskId) => call<TaskRunInfo>("GET", `/tasks/${encodeURIComponent(taskId)}/run`),
+    runTasks: async () => (await call<{ task_ids: string[] }>("GET", "/runs/tasks")).task_ids,
     undo: (mapId) => call<{ ops: Op[]; rev: number }>("POST", `/maps/${encodeURIComponent(mapId)}/undo`, {}),
     getOps: (mapId, from, to) => call<{ ops: Op[] }>("GET", `/maps/${encodeURIComponent(mapId)}/ops?from=${from}&to=${to}`),
     forkMap: (mapId, rev) => call<MindMap>("POST", `/maps/${encodeURIComponent(mapId)}/fork`, { rev }),

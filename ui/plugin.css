@@ -336,3 +336,34 @@ select.mm-input { padding-right: 4px; }
 .mm-share-error { color: var(--destructive); }
 .mm-qr { width: 168px; height: 168px; align-self: center; }
 .mm-code { display: block; padding: 8px 10px; border-radius: 8px; background: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+
+/* --- agent runs (Phase 2a) ------------------------------------------------------ */
+.mm-dialog { width: min(520px, 94%); display: flex; flex-direction: column; max-height: 80vh; }
+.mm-dialog-body { padding: 12px 14px; overflow: auto; }
+.mm-dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); }
+.mm-run-form { display: flex; flex-direction: column; gap: 12px; }
+.mm-run-target { display: flex; gap: 6px; align-items: baseline; margin: 0; min-width: 0; }
+.mm-run-goal { resize: vertical; min-height: 60px; height: auto; padding: 6px 8px; }
+.mm-run-mode { gap: 14px; }
+.mm-radio { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.mm-disabled { opacity: 0.5; cursor: not-allowed; }
+.mm-dlg-budget summary { cursor: pointer; font-size: 12px; color: var(--muted-foreground); }
+.mm-dlg-budget-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+.mm-swarm-row { gap: 6px; }
+.mm-swarm-row select { flex: 1; min-width: 0; }
+.mm-err { color: var(--destructive); font-style: normal; font-size: 12px; }
+.mm-runact { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; }
+.mm-runact .mm-row { gap: 6px; }
+.mm-menu { position: fixed; z-index: 30; min-width: 190px; padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--popover, var(--card)); box-shadow: 0 12px 36px color-mix(in oklch, var(--foreground) 20%, transparent); }
+.mm-menu-group + .mm-menu-group { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
+.mm-menu-item { display: block; width: 100%; padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--foreground); font: inherit; text-align: left; cursor: pointer; }
+.mm-menu-item:hover:not(:disabled), .mm-menu-item:focus-visible { background: var(--muted); outline: none; }
+.mm-menu-item:disabled { color: var(--muted-foreground); cursor: default; }
+.mm-question-bar { border-color: var(--mm-warn); z-index: 3; }
+.mm-question-input { height: 24px; width: 180px; font-size: 12px; }
+.mm-task-panel { min-height: 0; height: auto; padding: 12px; gap: 10px; overflow: auto; }
+.mm-task-panel.mm-muted { display: block; font-size: 13px; }
+.mm-crumbs { color: var(--muted-foreground); margin: 0; }
+.mm-branch { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.mm-branch li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mm-branch-root { font-weight: 600; }

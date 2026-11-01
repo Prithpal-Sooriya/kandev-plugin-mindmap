@@ -35,11 +35,15 @@ const PortKey = "loopback_port"
 // ProfileLister lists Kandev agent profiles (Host AgentProfiles().List).
 type ProfileLister func(ctx context.Context) ([]contract.AgentProfile, error)
 
+// RepoLister lists a workspace's Kandev repositories (Host Repositories().List).
+type RepoLister func(ctx context.Context, workspaceID string) ([]contract.RepoInfo, error)
+
 // Server is the loopback server.
 type Server struct {
 	svc      *app.Service
 	tools    *tools.Dispatcher
 	Profiles ProfileLister
+	Repos    RepoLister
 	links    *share.Links
 	limits   *share.Limiter
 
@@ -144,6 +148,14 @@ func (s *Server) routes() *http.ServeMux {
 	m("GET /m/{token}/api/maps/{map}/ops", s.opsRange)
 	m("POST /m/{token}/api/maps/{map}/undo", s.undo)
 	m("POST /m/{token}/api/maps/{map}/runs", s.startRun)
+	m("POST /m/{token}/api/maps/{map}/swarms", s.startSwarm)
+	m("POST /m/{token}/api/maps/{map}/nodes/{node}/answer", s.answerQuestion)
+	m("POST /m/{token}/api/runs/{run}/stop", s.stopRun)
+	m("POST /m/{token}/api/runs/{run}/message", s.messageRun)
+	m("POST /m/{token}/api/runs/{run}/approve", s.approveRun)
+	m("GET /m/{token}/api/runs/tasks", s.runTasks)
+	m("GET /m/{token}/api/tasks/{task}/run", s.taskRun)
+	m("GET /m/{token}/api/repos", s.repos)
 	m("POST /m/{token}/api/maps/{map}/assets", s.uploadAsset)
 	m("POST /m/{token}/api/maps/{map}/fork", s.fork)
 	m("POST /m/{token}/api/proposals/{id}/review", s.review)
@@ -160,8 +172,7 @@ func (s *Server) routes() *http.ServeMux {
 	m("GET /m/{token}/api/settings/share", s.getShareSettings)
 	m("PUT /m/{token}/api/settings/share", s.putShareSettings)
 	for _, p := range []string{
-		"POST /m/{token}/api/maps/{map}/swarms", "POST /m/{token}/api/maps/{map}/compile", "POST /m/{token}/api/maps/{map}/suggest",
-		"POST /m/{token}/api/runs/{run}/stop", "POST /m/{token}/api/runs/{run}/message", "POST /m/{token}/api/runs/{run}/approve",
+		"POST /m/{token}/api/maps/{map}/compile", "POST /m/{token}/api/maps/{map}/suggest",
 		"GET /m/{token}/api/maps/{map}/export.zip",
 	} {
 		m(p, func(w http.ResponseWriter, _ *http.Request, _ *principal) {

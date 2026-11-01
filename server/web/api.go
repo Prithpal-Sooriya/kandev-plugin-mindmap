@@ -110,61 +110,6 @@ func (s *Server) undo(w http.ResponseWriter, r *http.Request, p *principal) {
 	writeJSON(w, 200, contract.OpsPayload{Ops: res.Committed, Rev: res.Rev})
 }
 
-func (s *Server) startRun(w http.ResponseWriter, r *http.Request, p *principal) {
-	mapID := r.PathValue("map")
-	var req contract.StartRunRequest
-	if err := readJSON(r, &req); err != nil {
-		writeErr(w, err)
-		return
-	}
-	if req.Mode != "" && !req.Mode.Valid() {
-		writeErr(w, contract.FieldErr(contract.ErrBadRequest, "mode", "must be apply or propose"))
-		return
-	}
-	if req.Lens != "" && !req.Lens.Valid() {
-		writeErr(w, contract.FieldErr(contract.ErrBadRequest, "lens", "unknown lens"))
-		return
-	}
-	if err := req.Budget.Validate("budget"); err != nil {
-		writeErr(w, err)
-		return
-	}
-	pt, err := s.participant(p, r, mapID)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	if hold, err := s.svc.GuestRunNeedsApproval(mapID, pt.ID); err != nil {
-		writeErr(w, err)
-		return
-	} else if hold {
-		// Phase 2a queues the run (waiting_reason=approval) instead of refusing.
-		// Until that hold exists, a guest run does not start.
-		writeErr(w, contract.Errf(contract.ErrForbidden, "the host must approve guest runs on this map"))
-		return
-	}
-	if err := s.limits.Allow(share.LimitRuns, s.runLimitKey(r, p)); err != nil {
-		writeErr(w, err)
-		return
-	}
-	m, err := s.svc.Store.GetMap(mapID)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	profile := req.ProfileID
-	if profile == "" {
-		profile = m.Settings.DefaultProfileID
-	}
-	run, err := s.svc.StartRun(r.Context(), store.NewRun{MapID: mapID, NodeID: req.NodeID, ProfileID: profile, Template: req.Template,
-		Lens: req.Lens, Mode: req.Mode, Goal: req.Goal, Budget: req.Budget, StartedBy: pt.ID})
-	if err != nil && run.ID == "" {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, 200, contract.StartRunsResponse{Runs: []contract.Run{run.Run}})
-}
-
 func (s *Server) uploadAsset(w http.ResponseWriter, r *http.Request, p *principal) {
 	mapID := r.PathValue("map")
 	pt, err := s.participant(p, r, mapID)

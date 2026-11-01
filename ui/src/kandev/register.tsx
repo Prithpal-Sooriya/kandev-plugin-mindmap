@@ -1,19 +1,26 @@
-// In-Kandev bundle entry: registers /mindmap and a main nav item. Uses the
-// host's React through the registry API: no bundled React, no react-dom.
-import type { PluginHostApi, PluginRegistry } from "@kandev/plugin-sdk";
+// In-Kandev bundle entry: registers /mindmap, a main nav item and the task
+// panel for map runs. Uses the host's React through the registry API: no
+// bundled React, no react-dom.
+import type { PluginHostApi, PluginRegistry, PluginTaskPanelProps } from "@kandev/plugin-sdk";
 import { App } from "../canvas/App";
 import { MindmapIcon } from "../canvas/icons";
 import type { HostAdapter } from "../host/adapter";
 import { bindReact, h } from "../runtime";
 import { kandevAdapter } from "./adapter";
+import { RunTaskCache, TaskPanel } from "./TaskPanel";
 
 const PLUGIN_ID = "kandev-plugin-mindmap";
 const ROUTE = "/mindmap";
 
 let adapter: HostAdapter | null = null;
+let runTasks: RunTaskCache | null = null;
 
 function MindmapPage() {
   return h(App, { host: adapter! });
+}
+
+function MindmapTaskPanel(props: PluginTaskPanelProps) {
+  return h(TaskPanel, { ...props, host: adapter!, cache: runTasks! });
 }
 
 window.registerKandevPlugin(PLUGIN_ID, {
@@ -24,6 +31,17 @@ window.registerKandevPlugin(PLUGIN_ID, {
       topbar: { title: "Mind Map", subtitle: "Agentic, multiplayer", icon: MindmapIcon },
     });
     registry.registerNavItem({ id: "mindmap", label: "Mind Map", path: ROUTE, icon: MindmapIcon, section: "main" });
+    const a = adapter;
+    runTasks = new RunTaskCache(() => a.api.runTasks());
+    void runTasks.refresh();
+    registry.registerTaskPanel({
+      id: "mindmap-run",
+      title: "Mind Map",
+      icon: MindmapIcon,
+      Component: MindmapTaskPanel,
+      mobileEnabled: true,
+      visible: (ctx) => !!ctx.taskId && runTasks!.has(ctx.taskId),
+    });
   },
 });
 

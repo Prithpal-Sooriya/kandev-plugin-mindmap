@@ -15,6 +15,7 @@ import type { MapController } from "./controller";
 import { keyToCommand, type Command } from "./keys";
 import { NodeCard, propsEqual, type CardProps } from "./NodeCard";
 import { Minimap } from "./minimap";
+import { needsAnswer, QuestionAnswer } from "./QuestionAnswer";
 
 const LOD_ZOOM = 0.45;
 const MOUNT_PER_FRAME = 150;
@@ -37,7 +38,10 @@ export interface CanvasApi {
   command(c: Command): void;
 }
 
-export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi | null }; onCommand: (c: Command) => void }) {
+export function Canvas(props: {
+  ctl: MapController; apiRef: { current: CanvasApi | null }; onCommand: (c: Command) => void;
+  onNodeMenu?: (nodeId: string, clientX: number, clientY: number) => void;
+}) {
   const { ctl } = props;
   const viewportRef = React.useRef(null as HTMLDivElement | null);
   const worldRef = React.useRef(null as HTMLDivElement | null);
@@ -247,11 +251,21 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
   };
 
   const onDoubleClick = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest(".mm-node-toolbar")) return;
     const id = ((e.target as HTMLElement).closest(".mm-node") as HTMLElement | null)?.dataset.id;
     if (id && !id.startsWith("ghost:")) {
       ctl.select(id);
       ctl.startEdit(id);
     } else if (!id) fit();
+  };
+
+  const onContextMenu = (e: MouseEvent) => {
+    if (!props.onNodeMenu) return;
+    const id = ((e.target as HTMLElement).closest(".mm-node") as HTMLElement | null)?.dataset.id;
+    if (!id || id.startsWith("ghost:")) return;
+    e.preventDefault();
+    ctl.select(id);
+    props.onNodeMenu(id, e.clientX, e.clientY);
   };
 
   // --- keyboard ---------------------------------------------------------------------------
@@ -312,7 +326,7 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if ((e.target as HTMLElement).closest(".mm-editor")) return;
+    if ((e.target as HTMLElement).closest(".mm-editor, .mm-node-toolbar")) return;
     if (ctl.paletteOpen) {
       // The palette renders on the next frame: route early keystrokes into its query.
       if (e.key.length === 1 && !(e.metaKey || e.ctrlKey || e.altKey)) {
@@ -510,6 +524,7 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
       onKeyDown={onKeyDown}
       data-testid="mm-canvas"
       aria-label="Mind map canvas"
@@ -553,6 +568,9 @@ export function Canvas(props: { ctl: MapController; apiRef: { current: CanvasApi
             <button type="button" className="mm-btn mm-btn-xs mm-btn-primary" onClick={() => ctl.reviewNode(ctl.selection!, true)}>Accept</button>
             <button type="button" className="mm-btn mm-btn-xs" onClick={() => ctl.reviewNode(ctl.selection!, false)}>Reject</button>
           </div>
+        ) : null}
+        {selBox && !drag && needsAnswer(ctl.node(ctl.selection)) ? (
+          <QuestionAnswer key={ctl.selection!} ctl={ctl} node={ctl.node(ctl.selection)!} x={selBox.x} y={selBox.y + selBox.h + (selGhosts?.length ? 40 : 6)} />
         ) : null}
         {cursors}
       </div>

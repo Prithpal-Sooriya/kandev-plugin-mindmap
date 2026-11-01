@@ -150,9 +150,13 @@ func (s *Store) TouchToken(id string, ttl time.Duration) error {
 }
 
 // CountActiveRuns counts non-terminal runs on a map (the concurrency cap).
+// Swarm coordinators have no agent of their own and do not count, nor do
+// runs held for host approval (approval checks the cap again).
 func (s *Store) CountActiveRuns(mapID string) (int, error) {
 	var n int
-	err := s.db.QueryRow(`SELECT count(*) FROM runs WHERE map_id = ? AND status IN ('queued','running','waiting','review')`, mapID).Scan(&n)
+	err := s.db.QueryRow(`SELECT count(*) FROM runs WHERE map_id = ? AND status IN ('queued','running','waiting','review')
+		AND NOT (template = 'swarm' AND COALESCE(lens, '') = '')
+		AND NOT (status = 'waiting' AND COALESCE(waiting_reason, '') = 'approval' AND COALESCE(task_id, '') = '')`, mapID).Scan(&n)
 	return n, err
 }
 

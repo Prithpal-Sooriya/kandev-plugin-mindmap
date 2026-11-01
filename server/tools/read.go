@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"kandev-plugin-mindmap/server/contract"
+	"kandev-plugin-mindmap/server/store"
 )
 
 func toMap(v any) map[string]any {
@@ -120,6 +121,18 @@ func pathOf(nodes map[string]*contract.Node, id string) []string {
 	}
 	slices.Reverse(titles)
 	return titles
+}
+
+// Outline is the `context` text of a run, as its agent would see it on its
+// first call (launch prompts of harnesses that may have no tools).
+func (t *Tools) Outline(r store.RunRecord) string {
+	s := &session{run: &r, mapID: r.MapID, workspaceID: r.WorkspaceID,
+		actor: contract.Actor{ParticipantID: r.ParticipantID, RunID: r.ID}, refs: map[string]string{}, pending: map[string]bool{}}
+	res, err := t.context(context.Background(), s, &contract.ContextArgs{SubtreeDepth: 3})
+	if err != nil {
+		return ""
+	}
+	return res.Text
 }
 
 func (t *Tools) context(_ context.Context, s *session, a any) (contract.ToolResult, error) {

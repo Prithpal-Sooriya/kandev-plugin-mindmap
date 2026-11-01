@@ -102,11 +102,16 @@ const (
 	TemplateSynthesis Template = "synthesis" // overview + index + consolidated doc
 	TemplateExecute   Template = "execute"   // action node -> implementation task
 	TemplateCustom    Template = "custom"
+	TemplateExpand    Template = "expand"   // add the next level of branches
+	TemplateExamples  Template = "examples" // find real-world, cited examples
 )
 
-var Templates = []Template{TemplateResearch, TemplateExplore, TemplateSwarm, TemplateGarden, TemplateCritique, TemplateCompile, TemplateSynthesis, TemplateExecute, TemplateCustom}
+var Templates = []Template{TemplateResearch, TemplateExplore, TemplateSwarm, TemplateGarden, TemplateCritique, TemplateCompile, TemplateSynthesis, TemplateExecute, TemplateCustom, TemplateExpand, TemplateExamples}
 
 func (t Template) Valid() bool { return slices.Contains(Templates, t) }
+
+// SpawnTemplates are the templates the spawn tool may start.
+var SpawnTemplates = []Template{TemplateResearch, TemplateExplore, TemplateSwarm, TemplateCritique, TemplateExpand, TemplateExamples}
 
 // DefaultMode is the mode a template runs in when the caller does not choose.
 // Organiser runs (garden) default to propose, per the plan.

@@ -276,6 +276,16 @@ export type ReviewProposalRequest = Infer<typeof ReviewProposalRequestShape>;
 export const MessageRunRequestShape = obj("MessageRunRequest", { text: str() });
 export const AgentProfileShape = obj("AgentProfile", { id: str(), name: str(), harness: oneOf(HARNESSES) });
 export type AgentProfile = Infer<typeof AgentProfileShape>;
+export const AnswerQuestionRequestShape = obj("AnswerQuestionRequest", { answer: str() });
+export type AnswerQuestionRequest = Infer<typeof AnswerQuestionRequestShape>;
+export const RepoInfoShape = obj("RepoInfo", { id: str(), name: str() });
+export type RepoInfo = Infer<typeof RepoInfoShape>;
+export const RunTasksResponseShape = obj("RunTasksResponse", { task_ids: arr(str()) });
+export type RunTasksResponse = Infer<typeof RunTasksResponseShape>;
+export const NodeRefShape = obj("NodeRef", { id, title: str(), kind: oneOf(NODE_KINDS), status: oneOf(NODE_STATUSES) }, { depth: int });
+export type NodeRef = Infer<typeof NodeRefShape>;
+export const TaskRunInfoShape = obj("TaskRunInfo", { run: RunShape, map_title: str(), path: arr(NodeRefShape), branch: arr(NodeRefShape) }, { more: bool });
+export type TaskRunInfo = Infer<typeof TaskRunInfoShape>;
 
 export const ShareSettingsShape = obj("ShareSettings", {}, {
   provider: oneOf(SHARE_PROVIDERS),
@@ -339,6 +349,10 @@ export const FIXTURE_SHAPES: Record<string, Shape<unknown>> = {
   ReviewProposalRequest: ReviewProposalRequestShape,
   MessageRunRequest: MessageRunRequestShape,
   AgentProfile: AgentProfileShape,
+  AnswerQuestionRequest: AnswerQuestionRequestShape,
+  RepoInfo: RepoInfoShape,
+  RunTasksResponse: RunTasksResponseShape,
+  TaskRunInfo: TaskRunInfoShape,
   ShareLink: ShareLinkShape,
   ShareSettings: ShareSettingsShape,
   Patch: PatchShape,

@@ -36,6 +36,7 @@ func NewDispatcher(svc *app.Service) (*Dispatcher, *Tools) {
 	t := New(svc)
 	d := NewStub()
 	t.Register(d)
+	svc.Outline = t.Outline
 	return d, t
 }
 
@@ -44,15 +45,15 @@ func (t *Tools) Register(d *Dispatcher) {
 	d.Register(contract.ToolContext, t.wrap(t.context))
 	d.Register(contract.ToolRead, t.wrap(t.read))
 	d.Register(contract.ToolSearch, t.wrap(t.search))
-	d.Register(contract.ToolAdd, t.wrap(t.add))
-	d.Register(contract.ToolUpdate, t.wrap(t.update))
-	d.Register(contract.ToolAttach, t.wrap(t.attach))
-	d.Register(contract.ToolRestructure, t.wrap(t.restructure))
-	d.Register(contract.ToolLink, t.wrap(t.link))
-	d.Register(contract.ToolClaim, t.wrap(t.claim))
-	d.Register(contract.ToolSpawn, t.wrap(t.spawn))
-	d.Register(contract.ToolAskHuman, t.wrap(t.askHuman))
-	d.Register(contract.ToolWriteDoc, t.wrap(t.writeDoc))
+	d.Register(contract.ToolAdd, t.wrapWrite(t.add))
+	d.Register(contract.ToolUpdate, t.wrapWrite(t.update))
+	d.Register(contract.ToolAttach, t.wrapWrite(t.attach))
+	d.Register(contract.ToolRestructure, t.wrapWrite(t.restructure))
+	d.Register(contract.ToolLink, t.wrapWrite(t.link))
+	d.Register(contract.ToolClaim, t.wrapWrite(t.claim))
+	d.Register(contract.ToolSpawn, t.wrapWrite(t.spawn))
+	d.Register(contract.ToolAskHuman, t.wrapWrite(t.askHuman))
+	d.Register(contract.ToolWriteDoc, t.wrapWrite(t.writeDoc))
 	d.Register(contract.ToolReport, t.wrap(t.report))
 }
 
@@ -69,6 +70,21 @@ type session struct {
 func (s *session) personal() bool { return s.run == nil }
 
 type handler func(ctx context.Context, s *session, args any) (contract.ToolResult, error)
+
+// errStopped refuses writes from a stopped run at once: Kandev queues the
+// stop message until the agent's turn ends, so the agent may keep calling
+// tools until then. Reads and report still work.
+var errStopped = contract.Errf(contract.ErrRunEnded, "a human stopped this run: do not change the map; call report with status review and end your turn")
+
+// wrapWrite is wrap for tools that change the map.
+func (t *Tools) wrapWrite(h handler) Handler {
+	return t.wrap(func(ctx context.Context, s *session, args any) (contract.ToolResult, error) {
+		if s.run != nil && s.run.StopRequested && s.run.Status == contract.RunStopped {
+			return contract.ToolResult{}, errStopped
+		}
+		return h(ctx, s, args)
+	})
+}
 
 func (t *Tools) wrap(h handler) Handler {
 	return func(ctx context.Context, c Caller, args any) (contract.ToolResult, error) {

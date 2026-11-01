@@ -49,8 +49,8 @@ func setup(t *testing.T, mode contract.RunMode) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := svc.StartRun(context.Background(), store.NewRun{MapID: m.ID, NodeID: m.RootID, ProfileID: "prof-1", Mode: mode,
-		Budget: &contract.Budget{MaxNodes: 10, MaxSubagents: 2, MaxDepth: 3}, StartedBy: host.ID})
+	run, err := svc.StartRun(context.Background(), app.RunSpec{NewRun: store.NewRun{MapID: m.ID, NodeID: m.RootID, ProfileID: "prof-1", Mode: mode,
+		Budget: &contract.Budget{MaxNodes: 10, MaxSubagents: 2, MaxDepth: 3}, StartedBy: host.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,8 @@ func TestRestructureIsAtomicAndRetireSoftDeletes(t *testing.T) {
 			t.Fatalf("missing %q in\n%s", want, read.Text)
 		}
 	}
-	if strings.Contains(read.Text, "A1") {
+	// Match the rendered title: ids are random base62 and may contain "A1".
+	if strings.Contains(read.Text, "· A1") {
 		t.Fatalf("retired node still visible:\n%s", read.Text)
 	}
 }
@@ -230,7 +231,7 @@ func TestClaimSpawnAskHumanWriteDocReport(t *testing.T) {
 	f.ok("add", `{"nodes":[{"ref":"x","title":"Frontier"}]}`)
 	f.ok("claim", `{"node_id":"@x","note":"researching"}`)
 	// Another run cannot claim it.
-	other, err := f.svc.StartRun(context.Background(), store.NewRun{MapID: f.m.ID, NodeID: f.m.RootID, StartedBy: f.host.ID})
+	other, err := f.svc.StartRun(context.Background(), app.RunSpec{NewRun: store.NewRun{MapID: f.m.ID, NodeID: f.m.RootID, StartedBy: f.host.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}

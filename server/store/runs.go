@@ -363,6 +363,58 @@ func (s *Store) ListRuns(mapID string) ([]contract.Run, error) {
 	return out, rows.Err()
 }
 
+func (s *Store) queryRuns(where string, args ...any) ([]RunRecord, error) {
+	rows, err := s.db.Query(`SELECT `+runCols+` FROM runs WHERE `+where+` ORDER BY created_at, id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RunRecord
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ActiveRuns lists every run that is not terminal, across maps.
+func (s *Store) ActiveRuns() ([]RunRecord, error) {
+	return s.queryRuns(`status NOT IN ('done','failed','stopped')`)
+}
+
+// ChildRuns lists the runs started directly under a run.
+func (s *Store) ChildRuns(parentID string) ([]RunRecord, error) {
+	return s.queryRuns(`parent_run_id = ?`, parentID)
+}
+
+// RunTaskIDs lists the Kandev task ids of every run that has one.
+func (s *Store) RunTaskIDs() ([]string, error) {
+	rows, err := s.db.Query(`SELECT task_id FROM runs WHERE task_id IS NOT NULL ORDER BY created_at DESC LIMIT 5000`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// IssueRunToken mints a fresh run token for an existing run (a stopped
+// bridge run that a human messages again).
+func (s *Store) IssueRunToken(r RunRecord, port int) (string, error) {
+	raw, _, err := s.IssueToken(contract.TokenRun, port, r.MapID, r.ID, r.ParticipantID, "", "", 0)
+	return raw, err
+}
+
 // SetRunTask records the Kandev task (and session) of a run. It must be
 // called before the agent can call a tool.
 func (s *Store) SetRunTask(runID, taskID, sessionID string) error {

@@ -18,10 +18,12 @@ import (
 
 // LaunchRequest is what a Launcher needs to start a run's Kandev task.
 type LaunchRequest struct {
-	Run      store.RunRecord
-	Title    string
-	Prompt   string
-	RunToken string
+	Run         store.RunRecord
+	Title       string
+	Description string
+	Prompt      string
+	RunToken    string
+	RepoID      string // optional Kandev repository for the task
 }
 
 // LaunchResult identifies the Kandev task a launch created.
@@ -30,8 +32,8 @@ type LaunchResult struct {
 	SessionID string
 }
 
-// Launcher starts the Kandev task behind a run. Phase 2a wires
-// Host.Tasks().Create; until then NoopLauncher leaves runs queued.
+// Launcher starts the Kandev task behind a run (Host.Tasks().Create in the
+// plugin; NoopLauncher and FakeLauncher in tests).
 type Launcher interface {
 	Launch(ctx context.Context, req LaunchRequest) (LaunchResult, error)
 }
@@ -43,19 +45,31 @@ func (NoopLauncher) Launch(context.Context, LaunchRequest) (LaunchResult, error)
 	return LaunchResult{}, nil
 }
 
-// FakeLauncher records launches and hands out fake task ids (tests).
+// FakeLauncher records launches and hands out fake task ids (tests). Err,
+// when set, fails every launch.
 type FakeLauncher struct {
 	mu       sync.Mutex
 	Launches []LaunchRequest
+	Err      error
 	n        int
 }
 
 func (f *FakeLauncher) Launch(_ context.Context, req LaunchRequest) (LaunchResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.Err != nil {
+		return LaunchResult{}, f.Err
+	}
 	f.n++
 	f.Launches = append(f.Launches, req)
 	return LaunchResult{TaskID: "task-fake-" + req.Run.ID, SessionID: "sess-fake-" + req.Run.ID}, nil
+}
+
+// Requests returns a copy of the recorded launches.
+func (f *FakeLauncher) Requests() []LaunchRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]LaunchRequest(nil), f.Launches...)
 }
 
 // Messenger sends a chat message to a run's agent (Host Messages().Send).
@@ -68,6 +82,9 @@ type NoopMessenger struct{}
 
 func (NoopMessenger) Send(context.Context, string, string, string) error { return nil }
 
+// ProfileLister lists the Kandev agent profiles runs may use.
+type ProfileLister func(ctx context.Context) ([]contract.AgentProfile, error)
+
 // Service ties the store and hub together.
 type Service struct {
 	Store     *store.Store
@@ -78,10 +95,24 @@ type Service struct {
 	Stops StopAllRuns
 	Logf  func(format string, args ...any)
 
+	// Profiles resolves a run's profile id or name to its id, name and
+	// harness. When nil (tests), runs keep the profile fields they were given.
+	Profiles ProfileLister
+	// DefaultProfile is the plugin-config default profile ("" for none).
+	DefaultProfile func(ctx context.Context) string
+	// Outline renders a run's `context` text for prompts of harnesses that
+	// may have no tools (the bridge prompt's outline).
+	Outline func(r store.RunRecord) string
+	// OnTaskBound is called once a run's task id is recorded, so events that
+	// arrived before it can be replayed.
+	OnTaskBound func(taskID string)
+
 	// submitMu orders commit+broadcast so every client sees ops in rev
 	// order and before its own ack.
-	submitMu sync.Mutex
-	runMu    sync.Mutex
+	submitMu  sync.Mutex
+	runMu     sync.Mutex
+	heldMu    sync.Mutex
+	heldRepos map[string]string // run id -> repo of runs held for approval
 
 	mu         sync.Mutex
 	port       int
@@ -91,8 +122,10 @@ type Service struct {
 
 // New builds a service with no-op Kandev side effects.
 func New(st *store.Store, h *hub.Hub) *Service {
-	return &Service{Store: st, Hub: h, Launcher: NoopLauncher{}, Messenger: NoopMessenger{}, Logf: log.Printf,
+	s := &Service{Store: st, Hub: h, Launcher: NoopLauncher{}, Messenger: NoopMessenger{}, Logf: log.Printf,
 		origins: map[string]bool{}, lastOutput: map[string]time.Time{}}
+	s.Stops = RunStopper{Svc: s}
+	return s
 }
 
 // SetPort records the loopback port (bridge tokens embed it).
@@ -242,6 +275,18 @@ func (s *Service) relayAnswer(mapID string, p *contract.QuestionAnswerPayload, b
 	defer cancel()
 	if err := s.Messenger.Send(ctx, run.TaskID, run.SessionID, text); err != nil {
 		s.Logf("mindmap: relay answer to run %s: %v", run.ID, err)
+	} else if open, _ := s.Store.OpenQuestions(mapID, run.ID); !open {
+		// The answer restarts the agent. If it is still mid-turn no new
+		// session state arrives, so leave waiting(question) here.
+		if r, err := s.UpdateRun(run.ID, func(r *store.RunRecord) bool {
+			if r.Status != contract.RunWaiting || r.WaitingReason != contract.WaitingQuestion {
+				return false
+			}
+			r.Status, r.WaitingReason = contract.RunRunning, ""
+			return true
+		}); err == nil {
+			s.SetRunNodeStatus(r)
+		}
 	}
 	s.Activity(contract.ActivityEvent{MapID: mapID, Type: contract.ActivityQuestionAnswered, Actor: by,
 		Summary: name + " answered \"" + n.Title + "\"", NodeIDs: []string{n.ID}})
@@ -342,18 +387,28 @@ func (s *Service) RecordOutput(r store.RunRecord, lines []contract.OutputLine) {
 }
 
 // UpdateRun does a serialised read-modify-write of one run. fn returns false
-// to skip saving. The saved run is broadcast.
+// to skip saving. The saved run is broadcast, and a swarm coordinator above
+// it recomputes its status.
 func (s *Service) UpdateRun(runID string, fn func(r *store.RunRecord) bool) (store.RunRecord, error) {
+	r, saved, err := s.updateRun(runID, fn)
+	if err == nil && saved && r.ParentRunID != "" {
+		s.syncCoordinator(r.ParentRunID)
+	}
+	return r, err
+}
+
+func (s *Service) updateRun(runID string, fn func(r *store.RunRecord) bool) (store.RunRecord, bool, error) {
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	r, err := s.Store.GetRun(runID)
 	if err != nil {
-		return r, err
+		return r, false, err
 	}
 	if !fn(&r) {
-		return r, nil
+		return r, false, nil
 	}
-	return s.SaveRun(r)
+	r, err = s.SaveRun(r)
+	return r, err == nil, err
 }
 
 // SnapshotWithCursor returns a snapshot and the long-poll cursor of the same

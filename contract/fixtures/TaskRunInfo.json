@@ -1,0 +1,76 @@
+[
+  {
+    "run": {
+      "id": "run_research0001",
+      "map_id": "map_demo00000001",
+      "node_id": "nd_pricing000001",
+      "task_id": "task-123",
+      "session_id": "sess-456",
+      "profile_id": "profile-claude",
+      "profile_name": "Claude Sonnet",
+      "harness": "claude",
+      "template": "research",
+      "lens": "researcher",
+      "mode": "apply",
+      "goal": "Find three real pricing examples with sources.",
+      "budget": {
+        "max_depth": 3,
+        "max_nodes": 40,
+        "max_subagents": 4,
+        "max_minutes": 60
+      },
+      "usage": {
+        "nodes": 7,
+        "subagents": 1,
+        "depth": 2
+      },
+      "parent_run_id": "run_explorer00001",
+      "root_run_id": "run_explorer00001",
+      "swarm_id": "sw-1",
+      "status": "waiting",
+      "waiting_reason": "question",
+      "transport": "mcp",
+      "participant_id": "pt_agent0000001",
+      "started_by": "pt_host00000001",
+      "proposal_id": "prp_garden000001",
+      "summary": "Added 7 nodes.",
+      "last_output": "Searching for pricing pages...",
+      "reported": true,
+      "created_at": "2026-10-01T12:00:00Z",
+      "updated_at": "2026-10-01T12:05:00Z",
+      "ended_at": "2026-10-01T12:30:00Z"
+    },
+    "map_title": "Launch plan",
+    "path": [
+      {
+        "id": "nd_root00000001",
+        "title": "Launch plan",
+        "kind": "topic",
+        "status": "idle"
+      },
+      {
+        "id": "nd_pricing000001",
+        "title": "Pricing model",
+        "kind": "idea",
+        "status": "running",
+        "depth": 1
+      }
+    ],
+    "branch": [
+      {
+        "id": "nd_pricing000001",
+        "title": "Pricing model",
+        "kind": "idea",
+        "status": "running"
+      },
+      {
+        "id": "nd_tiers00000001",
+        "title": "Three-tier freemium",
+        "kind": "idea",
+        "status": "idle",
+        "depth": 1
+      }
+    ],
+    "more": true
+  }
+]
