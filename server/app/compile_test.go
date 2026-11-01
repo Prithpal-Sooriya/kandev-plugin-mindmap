@@ -78,6 +78,12 @@ func TestParseSuggestions(t *testing.T) {
 		"wrapper":      {`{"suggestions":[{"title":"One","description":"why"}]}`, 5, []string{"One"}},
 		"bullets":      {"- First\n* Second\nnot a bullet\n• Third", 2, []string{"First", "Second"}},
 		"nothing":      {"I can't help with that.", 5, nil},
+		// Utility replies can carry tool output or command lists around the answer.
+		"noisy prefix": {"Skills: [/home/u/skills/a/SKILL.md]\n- /home/u/skills/b/SKILL.md\n- /use-memory\n" +
+			`Here: [{"title":"Rain plan","kind":"risk"},{"title":"Frisbee"}] [done]`, 5, []string{"Rain plan", "Frisbee"}},
+		"wrapper after junk": {`{"cmd": "/x"} {"suggestions":[{"title":"Shade"}]}`, 5, []string{"Shade"}},
+		"path bullets only":  {"- /home/u/skills/a/SKILL.md\n- ~/notes.md\n- `ls`\n- https://example.com\n- notes/plan.md\n- Board games", 5, []string{"Board games"}},
+		"slash in an idea":   {"- Indoor/outdoor games\n- docs/plan\n- Pros and cons / budget", 5, []string{"Indoor/outdoor games", "Pros and cons / budget"}},
 	}
 	for name, c := range cases {
 		got := ParseSuggestions(c.text, c.max)

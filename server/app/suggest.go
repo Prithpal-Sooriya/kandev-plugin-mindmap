@@ -123,6 +123,10 @@ func (s *Service) runSuggest(run store.RunRecord, node contract.Node, count int)
 		}
 	}
 	if len(items) == 0 {
+		if r := []rune(strings.TrimSpace(text)); len(r) > 600 {
+			text = string(r[:600]) + "…"
+		}
+		s.Logf("mindmap: suggest %s: unusable reply: %q", run.ID, text)
 		s.failSuggest(run, "the utility agent returned no usable suggestions")
 		return
 	}
@@ -222,37 +226,86 @@ func (s *Service) suggestPrompt(run store.RunRecord, node contract.Node, count i
 	return b.String(), existing
 }
 
-// ParseSuggestions reads a utility agent's reply: a JSON array of
-// {title, kind, body} (optionally fenced, or wrapped as {"suggestions":
-// [...]}), else a bulleted list of titles. Titles are trimmed to one line and
-// de-duplicated; unknown kinds become ideas. At most max are returned.
-func ParseSuggestions(text string, max int) []contract.Suggestion {
-	type raw struct {
-		Title       string `json:"title"`
-		Kind        string `json:"kind"`
-		Body        string `json:"body"`
-		Description string `json:"description"`
-	}
-	var items []raw
-	if i, j := strings.Index(text, "["), strings.LastIndex(text, "]"); i >= 0 && j > i {
-		_ = json.Unmarshal([]byte(text[i:j+1]), &items)
-	}
-	if len(items) == 0 {
-		if i, j := strings.Index(text, "{"), strings.LastIndex(text, "}"); i >= 0 && j > i {
-			var wrap struct {
-				Suggestions []raw `json:"suggestions"`
-			}
-			if json.Unmarshal([]byte(text[i:j+1]), &wrap) == nil {
-				items = wrap.Suggestions
+// maxSuggestReply bounds how much of a reply is scanned for JSON.
+const maxSuggestReply = 64 << 10
+
+type suggestionJSON struct {
+	Title       string `json:"title"`
+	Kind        string `json:"kind"`
+	Body        string `json:"body"`
+	Description string `json:"description"`
+}
+
+// jsonSuggestions finds the last JSON array (or {"suggestions": [...]}) in
+// text whose items have titles.
+func jsonSuggestions(text string) []suggestionJSON {
+	var best []suggestionJSON
+	titled := func(items []suggestionJSON) bool {
+		for _, it := range items {
+			if strings.TrimSpace(it.Title) != "" {
+				return true
 			}
 		}
+		return false
 	}
+	for i := 0; i < len(text); i++ {
+		var items []suggestionJSON
+		switch text[i] {
+		case '[':
+			_ = json.NewDecoder(strings.NewReader(text[i:])).Decode(&items)
+		case '{':
+			var wrap struct {
+				Suggestions []suggestionJSON `json:"suggestions"`
+			}
+			if json.NewDecoder(strings.NewReader(text[i:])).Decode(&wrap) == nil {
+				items = wrap.Suggestions
+			}
+		default:
+			continue
+		}
+		if titled(items) {
+			best = items
+		}
+	}
+	return best
+}
+
+// plainTitle rejects bullet lines that are paths, commands or links rather
+// than ideas.
+func plainTitle(t string) bool {
+	if t == "" || len([]rune(t)) > 120 {
+		return false
+	}
+	if strings.ContainsAny(t[:1], "/~\\`$") || strings.Contains(t, "://") {
+		return false
+	}
+	low := strings.ToLower(t)
+	for _, ext := range []string{".md", ".go", ".ts", ".js", ".json", ".yaml", ".yml", ".py", ".sh"} {
+		if strings.HasSuffix(low, ext) {
+			return false
+		}
+	}
+	return !strings.Contains(t, "/") || strings.Contains(t, " ")
+}
+
+// ParseSuggestions reads a utility agent's reply: a JSON array of
+// {title, kind, body} (optionally fenced, or wrapped as {"suggestions":
+// [...]}), else a bulleted list of titles. Replies can carry other text
+// around the JSON (tool output, command lists), so every '[' and '{' is tried
+// and the last array with titles wins. Bullets that look like paths or
+// commands are ignored. Titles are trimmed to one line and de-duplicated;
+// unknown kinds become ideas. At most max are returned.
+func ParseSuggestions(text string, max int) []contract.Suggestion {
+	if len(text) > maxSuggestReply {
+		text = text[len(text)-maxSuggestReply:]
+	}
+	items := jsonSuggestions(text)
 	if len(items) == 0 {
 		for _, line := range strings.Split(text, "\n") {
 			l := strings.TrimSpace(line)
 			for _, p := range []string{"- ", "* ", "• "} {
-				if strings.HasPrefix(l, p) {
-					items = append(items, raw{Title: strings.TrimSpace(l[len(p):])})
+				if t := strings.TrimSpace(strings.TrimPrefix(l, p)); strings.HasPrefix(l, p) && plainTitle(t) {
+					items = append(items, suggestionJSON{Title: t})
 				}
 			}
 		}
