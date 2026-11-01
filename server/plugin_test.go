@@ -279,3 +279,31 @@ func TestPatchBlocksFromMessages(t *testing.T) {
 		t.Fatal("read allowed in patch")
 	}
 }
+
+func TestDefaultProfile(t *testing.T) {
+	p := newTestPlugin(t)
+	ctx := context.Background()
+
+	// [claude, cursor, pi] -> resolves to pi
+	p.cache.profiles = []contract.AgentProfile{
+		{ID: "cld", Name: "Claude", Harness: contract.HarnessClaude},
+		{ID: "cur", Name: "Cursor", Harness: contract.HarnessCursor},
+		{ID: "pi", Name: "Pi", Harness: contract.HarnessPi},
+	}
+	p.cache.profilesAt = time.Now()
+
+	if got := p.defaultProfile(ctx); got != "pi" {
+		t.Errorf("expected pi, got %q", got)
+	}
+
+	// [claude, cursor] -> resolves to cursor
+	p.cache.profiles = []contract.AgentProfile{
+		{ID: "cld", Name: "Claude", Harness: contract.HarnessClaude},
+		{ID: "cur", Name: "Cursor", Harness: contract.HarnessCursor},
+	}
+	p.cache.profilesAt = time.Now()
+
+	if got := p.defaultProfile(ctx); got != "cur" {
+		t.Errorf("expected cur, got %q", got)
+	}
+}
