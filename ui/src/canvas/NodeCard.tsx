@@ -70,6 +70,9 @@ export function NodeCard(p: CardProps) {
 
   return (
     <div className={cls} style={style} data-id={node.id} data-depth={box.depth} title={update?.detail ? `Proposed: ${update.detail}` : undefined}>
+      {/* Link ports: drag from a dot to draw a cross-link. */}
+      <span className="mm-port mm-port-l" data-id={node.id} data-side="l" aria-hidden="true" />
+      <span className="mm-port mm-port-r" data-id={node.id} data-side="r" aria-hidden="true" />
       {p.trail ? <TrailFlash at={p.trail.at} color={p.trail.color} /> : null}
       {p.ring ? <StatusRing status={p.ring.status} color={p.ring.color} count={p.ring.count} /> : null}
       <div className="mm-node-title" style={{ WebkitLineClamp: box.lines, visibility: p.hideTitle ? "hidden" : undefined }}>

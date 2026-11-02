@@ -18,7 +18,11 @@
         },
         "max_concurrent_runs": 4,
         "export_dir": "~/Kandev/mindmaps",
-        "require_guest_run_approval": true
+        "require_guest_run_approval": true,
+        "layout": {
+          "nd_root00000001": { "x": -140, "y": -28 }
+        },
+        "archived": true
       }
     },
     "actor": {

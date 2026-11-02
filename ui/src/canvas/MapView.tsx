@@ -134,6 +134,7 @@ export function MapView(props: { host: HostAdapter; mapId: string; onBack?: () =
     ...(hasDocs ? [{ id: "export", label: "Download compiled docs (zip)", run: () => downloadDocsZip(ctl, selected?.kind === "doc" ? selected.id : undefined) }] : []),
     { id: "dock", label: ctl.dockOpen ? "Close agents dock" : "Open agents dock", run: () => (ctl.dockOpen ? closeDock() : openDock("all")) },
     { id: "fit", label: "Fit map to screen", hint: IS_MAC ? "⌘0" : "Ctrl 0", run: () => apiRef.current?.fit() },
+    { id: "relayout", label: "Reset node layout (auto tidy tree)", run: () => ctl.clearLayout() },
     { id: "ghosts", label: ctl.showGhosts ? "Hide proposed changes" : "Show proposed changes", run: () => ctl.toggleGhosts() },
     { id: "inspector", label: ctl.inspectorOpen ? "Close inspector" : "Open inspector", hint: "⇧Enter", run: () => { ctl.inspectorOpen = !ctl.inspectorOpen; ctl.bump(); } },
     { id: "child", label: "Add child", hint: "Tab", run: () => apiRef.current?.command({ type: "addChild" }) },

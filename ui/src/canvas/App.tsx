@@ -39,11 +39,19 @@ export function App(props: { host: HostAdapter }) {
 
 function MapList(props: { host: HostAdapter; onOpen: (id: string) => void }) {
   const { host } = props;
-  const maps = useAsync(() => host.api.listMaps(), [host]);
+  const [showArchived, setShowArchived] = React.useState(false);
+  const maps = useAsync(() => host.api.listMaps(showArchived ? { archived: true } : {}), [host, showArchived]);
   const [title, setTitle] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [renaming, setRenaming] = React.useState(null as string | null);
+  const [confirming, setConfirming] = React.useState(null as string | null);
   const seeded = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(null), 4000);
+    return () => clearTimeout(t);
+  }, [confirming]);
 
   const create = async (t: string, seed = 0) => {
     const ws = host.workspaceId();
@@ -85,6 +93,36 @@ function MapList(props: { host: HostAdapter; onOpen: (id: string) => void }) {
     }
   };
 
+  // Archive rides a normal map.update op: settings are replaced whole, so
+  // echo the snapshot's settings with the flag flipped (undoable, synced).
+  const toggleArchive = async (m: MapSummary) => {
+    setConfirming(null);
+    try {
+      const snap = await host.api.getMap(m.id);
+      const pid = host.participant()?.id ?? "pt_host00000000";
+      const settings = { ...snap.map.settings, archived: !m.archived };
+      await host.endpoints.submit(m.id, {
+        client_id: "maplist",
+        ops: [{ id: newId("op"), map_id: m.id, rev: 0, type: "map.update", payload: { settings }, actor: { participant_id: pid } }],
+      });
+      maps.reload();
+    } catch (e) {
+      host.toast(e instanceof ContractError ? e.message : `Could not ${m.archived ? "unarchive" : "archive"} the map.`, "error");
+    }
+  };
+
+  // Delete is soft (30-day window) and refused while agents run or the map
+  // is shared; the confirm button protects against the twitchy click.
+  const del = async (m: MapSummary) => {
+    setConfirming(null);
+    try {
+      await host.api.deleteMap(m.id);
+      maps.reload();
+    } catch (e) {
+      host.toast(e instanceof ContractError ? e.message : "Could not delete the map.", "error");
+    }
+  };
+
   return (
     <div className="mm-list" data-testid="mm-map-list">
       <header className="mm-list-head">
@@ -97,10 +135,16 @@ function MapList(props: { host: HostAdapter; onOpen: (id: string) => void }) {
       </form>
       {maps.loading && !maps.data ? <p className="mm-muted">Loading…</p> : null}
       {maps.error ? <p className="mm-warn">Could not load maps: {maps.error} <button type="button" className="mm-btn mm-btn-xs" onClick={maps.reload}>Retry</button></p> : null}
-      {maps.data && !maps.data.length ? <p className="mm-muted">No maps yet. Name a central topic above to start one.</p> : null}
+      {maps.data && !maps.data.length ? (
+        <p className="mm-muted">{showArchived ? "No archived maps." : "No maps yet. Name a central topic above to start one."}</p>
+      ) : null}
+      {/* Always rendered: an empty view still needs the way back. */}
+      <button type="button" className="mm-btn mm-btn-xs mm-archive-toggle" data-testid="mm-archive-toggle" onClick={() => setShowArchived((v) => !v)}>
+        <Icon d={showArchived ? ICONS.unarchive : ICONS.archive} /> {showArchived ? "Back to active maps" : "Archived maps"}
+      </button>
       <ul className="mm-map-cards">
         {(maps.data ?? []).slice().sort((a, b) => b.updated_at.localeCompare(a.updated_at)).map((m) => (
-          <li key={m.id} className="mm-map-card">
+          <li key={m.id} className={`mm-map-card${m.archived ? " mm-map-archived" : ""}`}>
             {renaming === m.id ? (
               <input
                 className="mm-input"
@@ -119,7 +163,26 @@ function MapList(props: { host: HostAdapter; onOpen: (id: string) => void }) {
                 <span className="mm-muted">{m.nodes} nodes{m.active_runs ? ` · ${m.active_runs} agents running` : ""}{m.shared ? " · shared" : ""}</span>
               </button>
             )}
-            <button type="button" className="mm-icon-btn" onClick={() => setRenaming(m.id)} aria-label={`Rename ${m.title}`}><Icon d={ICONS.edit} /></button>
+            {!showArchived ? <button type="button" className="mm-icon-btn" onClick={() => setRenaming(m.id)} aria-label={`Rename ${m.title}`}><Icon d={ICONS.edit} /></button> : null}
+            <button
+              type="button"
+              className="mm-icon-btn"
+              onClick={() => void toggleArchive(m)}
+              title={m.archived ? "Put back in the active list" : "Archive: hide from the list, keep the map"}
+              aria-label={`${m.archived ? "Unarchive" : "Archive"} ${m.title}`}
+            ><Icon d={m.archived ? ICONS.unarchive : ICONS.archive} /></button>
+            {confirming === m.id ? (
+              <button type="button" className="mm-btn mm-btn-xs mm-btn-danger" data-testid="mm-confirm-delete" onClick={() => void del(m)}>Delete for good?</button>
+            ) : (
+              <button
+                type="button"
+                className="mm-icon-btn mm-icon-danger"
+                disabled={!!m.active_runs}
+                title={m.active_runs ? "Stop the running agents first" : "Delete (kept 30 days)"}
+                aria-label={`Delete ${m.title}`}
+                onClick={() => setConfirming(m.id)}
+              ><Icon d={ICONS.trash} /></button>
+            )}
           </li>
         ))}
       </ul>

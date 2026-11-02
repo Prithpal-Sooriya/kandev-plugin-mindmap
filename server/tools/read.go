@@ -138,7 +138,7 @@ func (t *Tools) Outline(r store.RunRecord) string {
 func (t *Tools) context(_ context.Context, s *session, a any) (contract.ToolResult, error) {
 	args := a.(*contract.ContextArgs)
 	if s.personal() {
-		maps, err := t.svc.Store.ListMaps("", "")
+		maps, err := t.svc.Store.ListMaps("", "", false)
 		if err != nil {
 			return contract.ToolResult{}, err
 		}

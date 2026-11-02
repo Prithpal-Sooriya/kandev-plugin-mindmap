@@ -85,16 +85,22 @@ export function treeEdgePath(p: Box, c: Box): string {
 }
 
 /** Cross-link: a curve between card centres, bowed to one side. Returns the path and its label point. */
-export function linkPath(a: Box, b: Box): { d: string; lx: number; ly: number } {
+/** Curved cross-link between two boxes, both ends trimmed to the card
+ *  edges along the curve's tangent so arrows attach at the border, not under
+ *  the card. sx/sy/ex/ey are the trimmed endpoints (for drag handles). */
+export function linkPath(a: Box, b: Box): { d: string; lx: number; ly: number; sx: number; sy: number; ex: number; ey: number } {
   const x1 = a.x + a.w / 2, y1 = a.y + a.h / 2, x2 = b.x + b.w / 2, y2 = b.y + b.h / 2;
   const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
   const dx = x2 - x1, dy = y2 - y1;
   const len = Math.hypot(dx, dy) || 1;
   const bow = Math.min(120, len * 0.25);
   const cx = mx - (dy / len) * bow, cy = my + (dx / len) * bow;
+  const t1 = edgeT(a, cx - x1, cy - y1), t2 = edgeT(b, cx - x2, cy - y2);
+  const sx = x1 + (cx - x1) * t1, sy = y1 + (cy - y1) * t1;
+  const ex = x2 + (cx - x2) * t2, ey = y2 + (cy - y2) * t2;
   // Point on the quadratic at t=0.5.
   const lx = 0.25 * x1 + 0.5 * cx + 0.25 * x2, ly = 0.25 * y1 + 0.5 * cy + 0.25 * y2;
-  return { d: `M${r(x1)} ${r(y1)}Q${r(cx)} ${r(cy)} ${r(x2)} ${r(y2)}`, lx, ly };
+  return { d: `M${r(sx)} ${r(sy)}Q${r(cx)} ${r(cy)} ${r(ex)} ${r(ey)}`, lx, ly, sx, sy, ex, ey };
 }
 
 /** Straight arrow between two boxes' centres, trimmed to their edges (ghost moves). */

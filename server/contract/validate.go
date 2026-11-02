@@ -2,6 +2,7 @@ package contract
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"slices"
 	"strings"
@@ -234,6 +235,17 @@ func (p *MapUpdatePayload) Validate() error {
 		}
 		if err := s.DefaultBudget.Validate("settings.default_budget"); err != nil {
 			return err
+		}
+		if len(s.Layout) > MaxMapNodes {
+			return FieldErr(ErrTooLarge, "settings.layout", "layout holds at most %d positions", MaxMapNodes)
+		}
+		for id, pt := range s.Layout {
+			if !ValidID(PrefixNode, id) {
+				return FieldErr(ErrInvalidOp, "settings.layout", "unknown node id %q", id)
+			}
+			if math.Abs(pt.X) > MaxCoord || math.Abs(pt.Y) > MaxCoord {
+				return FieldErr(ErrInvalidOp, "settings.layout", "position for %s out of range", id)
+			}
 		}
 	}
 	return nil

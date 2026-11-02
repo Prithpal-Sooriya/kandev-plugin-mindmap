@@ -85,14 +85,20 @@ func (s *Store) GetMap(mapID string) (contract.Map, error) {
 }
 
 // ListMaps lists maps, newest first. workspaceID "" lists every workspace;
-// mapID restricts to one map (share-scoped tokens).
-func (s *Store) ListMaps(workspaceID, mapID string) ([]contract.MapSummary, error) {
-	q := `SELECT m.id, m.title, m.workspace_id, m.updated_at,
+// mapID restricts to one map (share-scoped tokens, which always see their map
+// regardless of archived state). archived selects the half of the split:
+// false lists live maps, true lists archived ones.
+func (s *Store) ListMaps(workspaceID, mapID string, archived bool) ([]contract.MapSummary, error) {
+	q := `SELECT m.id, m.title, m.workspace_id, m.updated_at, m.settings_json,
 		(SELECT count(*) FROM nodes n WHERE n.map_id = m.id AND n.deleted = 0),
 		(SELECT count(*) FROM runs r WHERE r.map_id = m.id AND r.status IN ('queued','running','waiting')),
 		(SELECT count(*) FROM share_links sl WHERE sl.map_id = m.id AND sl.status IN ('starting','active'))
 		FROM maps m WHERE m.deleted_at IS NULL`
 	var args []any
+	if mapID == "" {
+		q += ` AND COALESCE(json_extract(m.settings_json, '$.archived'), 0) = ?`
+		args = append(args, btoi(archived))
+	}
 	if workspaceID != "" {
 		q += ` AND m.workspace_id = ?`
 		args = append(args, workspaceID)
@@ -109,15 +115,56 @@ func (s *Store) ListMaps(workspaceID, mapID string) ([]contract.MapSummary, erro
 	out := []contract.MapSummary{}
 	for rows.Next() {
 		var ms contract.MapSummary
-		var updated string
+		var updated, settingsJSON string
 		var shared int
-		if err := rows.Scan(&ms.ID, &ms.Title, &ms.WorkspaceID, &updated, &ms.Nodes, &ms.ActiveRuns, &shared); err != nil {
+		if err := rows.Scan(&ms.ID, &ms.Title, &ms.WorkspaceID, &updated, &settingsJSON, &ms.Nodes, &ms.ActiveRuns, &shared); err != nil {
 			return nil, err
+		}
+		if settingsJSON != "" {
+			var st contract.MapSettings
+			if json.Unmarshal([]byte(settingsJSON), &st) == nil {
+				ms.Archived = st.Archived
+			}
 		}
 		ms.UpdatedAt, ms.Shared = parseTime(updated), shared > 0
 		out = append(out, ms)
 	}
 	return out, rows.Err()
+}
+
+// DeleteMap soft-deletes a map: hidden everywhere, kept in the database for
+// 30 days (schema.sql purges the rest). The map must not have live agents or
+// an active share — callers should tell the user to stop them first.
+func (s *Store) DeleteMap(mapID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var liveRuns int
+	if err := s.db.QueryRow(`SELECT count(*) FROM runs WHERE map_id = ? AND status IN ('queued','running','waiting')`, mapID).Scan(&liveRuns); err != nil {
+		return err
+	}
+	if liveRuns > 0 {
+		return contract.FieldErr(contract.ErrConflict, "map", "the map has %d live agents — stop them before deleting", liveRuns)
+	}
+	var liveShare int
+	if err := s.db.QueryRow(`SELECT count(*) FROM share_links WHERE map_id = ? AND status IN ('starting','active')`, mapID).Scan(&liveShare); err != nil {
+		return err
+	}
+	if liveShare > 0 {
+		return contract.FieldErr(contract.ErrConflict, "share", "stop sharing the map before deleting it")
+	}
+	if _, err := s.db.Exec(`UPDATE maps SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`, s.now(), mapID); err != nil {
+		return err
+	}
+	delete(s.maps, mapID)
+	return nil
+}
+
+// btoi keeps the archived filter's argument an int, as SQLite likes it.
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // View runs fn with read access to a map's cached state under the store

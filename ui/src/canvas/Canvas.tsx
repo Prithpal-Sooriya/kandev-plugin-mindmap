@@ -30,6 +30,19 @@ interface DragState {
   target: DropTarget | null;
 }
 
+/** A link gesture in progress: new link from a port, or re-pointing one end
+ *  of an existing link. ax/ay is the fixed anchor, x/y the cursor (world). */
+interface LinkDrag {
+  kind: "new" | "end";
+  ax: number;
+  ay: number;
+  x: number;
+  y: number;
+  from?: string;
+  linkId?: string;
+  end?: "from" | "to";
+}
+
 export interface CanvasApi {
   fit(): void;
   zoom(factor: number): void;
@@ -50,6 +63,7 @@ export function Canvas(props: {
   const [region, setRegion] = React.useState(null as { x: number; y: number; w: number; h: number } | null);
   const [lod, setLod] = React.useState(false);
   const [drag, setDrag] = React.useState(null as DragState | null);
+  const [linkDrag, setLinkDrag] = React.useState(null as LinkDrag | null);
   const [, setMountTick] = React.useState(0);
   const [thumbs, setThumbs] = React.useState(new Map<string, string>());
   const cardCache = React.useRef(new Map<string, { props: CardProps; el: unknown }>());
@@ -59,7 +73,10 @@ export function Canvas(props: {
   const lastK = React.useRef(0);
   const rasterK = React.useRef(1);
   const settle = React.useRef(null as ReturnType<typeof setTimeout> | null);
-  const pointer = React.useRef(null as null | { mode: "pan" | "node"; id?: string; sx: number; sy: number; cx: number; cy: number; moved: boolean; pid: number });
+  const pointer = React.useRef(null as null | {
+    mode: "pan" | "node" | "link" | "linkEnd"; id?: string; linkId?: string; end?: "from" | "to"; side?: "l" | "r";
+    sx: number; sy: number; cx: number; cy: number; moved: boolean; pid: number;
+  });
 
   const display = ctl.display;
   const { boxes, children, bounds } = display.layout;
@@ -191,16 +208,43 @@ export function Canvas(props: {
 
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0 && e.button !== 1) return;
-    const t = e.target as HTMLElement;
+    const t = e.target as Element;
     if (t.closest(".mm-editor, .mm-node-toolbar")) return;
-    const card = t.closest(".mm-node") as HTMLElement | null;
-    const id = card?.dataset.id;
     viewportRef.current?.focus({ preventScroll: true });
     try {
       viewportRef.current?.setPointerCapture?.(e.pointerId);
     } catch {
       // synthetic or already-released pointer: dragging still works without capture
     }
+    // Link gestures beat card drags: port dots start a new link, endpoint
+    // handles re-point an existing one.
+    const port = t.closest(".mm-port") as HTMLElement | null;
+    if (port?.dataset.id && e.button === 0) {
+      const b = boxes.get(port.dataset.id);
+      if (b) {
+        const side = port.dataset.side === "l" ? "l" : "r";
+        pointer.current = { mode: "link", id: port.dataset.id, side, sx: e.clientX, sy: e.clientY, cx: 0, cy: 0, moved: false, pid: e.pointerId };
+        setLinkDrag({ kind: "new", ax: side === "r" ? b.x + b.w : b.x, ay: b.y + b.h / 2, x: b.x + b.w / 2, y: b.y + b.h / 2, from: port.dataset.id });
+        if (ctl.editing) ctl.commitEdit();
+        return;
+      }
+    }
+    const end = t.closest(".mm-link-end") as SVGElement | null;
+    if (end?.dataset.link && e.button === 0) {
+      const l = ctl.view.links.get(end.dataset.link);
+      const a = l ? boxes.get(l.from) : null;
+      const b = l ? boxes.get(l.to) : null;
+      if (l && a && b && !l.deleted) {
+        const which = end.dataset.end === "from" ? "from" : "to";
+        const lp = linkPath(a, b);
+        const anchor = which === "from" ? { ax: lp.ex, ay: lp.ey } : { ax: lp.sx, ay: lp.sy };
+        pointer.current = { mode: "linkEnd", linkId: l.id, end: which, sx: e.clientX, sy: e.clientY, cx: 0, cy: 0, moved: false, pid: e.pointerId };
+        setLinkDrag({ kind: "end", ...anchor, x: anchor.ax, y: anchor.ay, linkId: l.id, end: which });
+        return;
+      }
+    }
+    const card = t.closest(".mm-node") as HTMLElement | null;
+    const id = card?.dataset.id;
     pointer.current = {
       mode: id && e.button === 0 ? "node" : "pan", id, sx: e.clientX, sy: e.clientY, cx: cam.current.x, cy: cam.current.y,
       moved: false, pid: e.pointerId,
@@ -213,6 +257,10 @@ export function Canvas(props: {
     ctl.publishPresence({ cursor: { x: Math.round(wp.x), y: Math.round(wp.y) } });
     const p = pointer.current;
     if (!p || p.pid !== e.pointerId) return;
+    if (p.mode === "link" || p.mode === "linkEnd") {
+      setLinkDrag((d) => (d ? { ...d, x: wp.x, y: wp.y } : d));
+      return;
+    }
     const dist = Math.hypot(e.clientX - p.sx, e.clientY - p.sy);
     if (!p.moved && dist < 4) return;
     p.moved = true;
@@ -223,14 +271,23 @@ export function Canvas(props: {
       return;
     }
     const id = p.id!;
-    if (id === display.rootId || id.startsWith("ghost:")) return;
+    if (id.startsWith("ghost:")) return;
     const b = boxes.get(id);
     if (!b) return;
     const start = screenToWorld(cam.current, p.sx - viewportRef.current!.getBoundingClientRect().left, p.sy - viewportRef.current!.getBoundingClientRect().top);
     const dx = drag?.dx ?? start.x - b.x, dy = drag?.dy ?? start.y - b.y;
     const parents = buildParentIndex(ctl.view.nodes.values());
-    const target = dropTarget(boxes, (pid) => ctl.siblingsOf(pid), parents, id, wp.x, wp.y);
+    // The root can be dragged to pin it (never re-parented: it has no parent).
+    const target = id === display.rootId ? null : dropTarget(boxes, (pid) => ctl.siblingsOf(pid), parents, id, wp.x, wp.y);
     setDrag({ id, x: wp.x, y: wp.y, dx, dy, target });
+  };
+
+  /** The visible card under a world point, if any (link drop targets). */
+  const boxAt = (x: number, y: number): Box | null => {
+    for (const b of boxes.values()) {
+      if (visible.has(b.id) && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b;
+    }
+    return null;
   };
 
   const onPointerUp = (e: PointerEvent) => {
@@ -238,9 +295,29 @@ export function Canvas(props: {
     pointer.current = null;
     viewportRef.current?.classList.remove("mm-panning");
     if (!p || p.pid !== e.pointerId) return;
+    const wp = worldPoint(e);
+    if (p.mode === "link") {
+      const b = boxAt(wp.x, wp.y);
+      if (b && p.id && b.id !== p.id) ctl.addLink(p.id, b.id);
+      setLinkDrag(null);
+      return;
+    }
+    if (p.mode === "linkEnd") {
+      const b = boxAt(wp.x, wp.y);
+      const l = p.linkId ? ctl.view.links.get(p.linkId) : undefined;
+      if (b && l && !l.deleted) {
+        if (p.end === "from") ctl.relink(l.id, b.id, l.to);
+        else ctl.relink(l.id, l.from, b.id);
+      }
+      setLinkDrag(null);
+      return;
+    }
     if (p.mode === "node" && p.id) {
       if (drag && drag.target) ctl.move(drag.id, drag.target.parentId, drag.target.order);
-      else if (!p.moved) ctl.select(p.id);
+      else if (drag) {
+        // Drop in empty space: free positioning (host) instead of reparent.
+        ctl.positionNode(drag.id, drag.x - drag.dx, drag.y - drag.dy);
+      } else if (!p.moved) ctl.select(p.id);
       setDrag(null);
       return;
     }
@@ -252,11 +329,31 @@ export function Canvas(props: {
 
   const onDoubleClick = (e: MouseEvent) => {
     if ((e.target as HTMLElement).closest(".mm-node-toolbar")) return;
-    const id = ((e.target as HTMLElement).closest(".mm-node") as HTMLElement | null)?.dataset.id;
-    if (id && !id.startsWith("ghost:")) {
-      ctl.select(id);
-      ctl.startEdit(id);
-    } else if (!id) fit();
+    // Hit-test the point, not e.target: the first click re-renders and can
+    // swap the element under the cursor, which would send a card dblclick to
+    // the empty-canvas branch below.
+    const wp = worldPoint(e);
+    const hit = boxAt(wp.x, wp.y);
+    if (hit) {
+      if (!hit.id.startsWith("ghost:")) {
+        ctl.select(hit.id);
+        ctl.startEdit(hit.id);
+      }
+      return;
+    }
+    // Double-click on empty canvas: a new idea under the nearest node, at the
+    // click point. Fit stays on ⌘0 / the palette.
+    let best: string | null = null;
+    let bd = Infinity;
+    for (const b of boxes.values()) {
+      if (!visible.has(b.id)) continue;
+      const d = (b.x + b.w / 2 - wp.x) ** 2 + (b.y + b.h / 2 - wp.y) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = b.id;
+      }
+    }
+    if (best) ctl.addChildAt(best, wp.x, wp.y);
   };
 
   const onContextMenu = (e: MouseEvent) => {
@@ -453,11 +550,25 @@ export function Canvas(props: {
       const lp = linkPath(a, b);
       return (
         <g key={l.id} className={`mm-link${ghost ? " mm-link-ghost" : ""}`}>
-          <path d={lp.d} markerEnd="url(#mm-arrow)" />
+          {/* fat invisible twin for hover/hit-testing */}
+          {!ghost ? <path className="mm-link-hit" d={lp.d} /> : null}
+          <path className="mm-line" d={lp.d} markerEnd="url(#mm-arrow)" />
           {l.label && !lod ? <text x={lp.lx} y={lp.ly} textAnchor="middle" dy="-4">{l.label}</text> : null}
+          {/* draggable endpoint handles, shown on hover */}
+          {!ghost && !lod ? (
+            <g>
+              <circle className="mm-link-end" data-link={l.id} data-end="from" cx={lp.sx} cy={lp.sy} r="5" />
+              <circle className="mm-link-end" data-link={l.id} data-end="to" cx={lp.ex} cy={lp.ey} r="5" />
+            </g>
+          ) : null}
         </g>
       );
     });
+
+  // Rubber band while drawing or re-pointing a link.
+  const rubber = linkDrag ? (
+    <path className="mm-rubber" d={`M${linkDrag.ax} ${linkDrag.ay}L${linkDrag.x} ${linkDrag.y}`} markerEnd="url(#mm-arrow)" />
+  ) : null;
 
   const halos = computeHalos(ctl).map((halo) => <rect key={`halo-${halo.id}`} x={halo.box.x} y={halo.box.y} width={halo.box.w} height={halo.box.h} rx="16" fill={halo.color} opacity="0.1" />);
   const arrows = display.arrows.map((a, i) => {
@@ -551,6 +662,7 @@ export function Canvas(props: {
               ? <rect className="mm-drop-target" x={drag.target.indicator.x} y={drag.target.indicator.y} width={drag.target.indicator.w} height={drag.target.indicator.h} rx="10" />
               : <rect className="mm-drop-line" x={drag.target.indicator.x} y={drag.target.indicator.y} width={drag.target.indicator.w} height="3" rx="1.5" />
           ) : null}
+          {rubber}
         </svg>
         {cards}
         {drag && dragBox ? (
@@ -576,7 +688,7 @@ export function Canvas(props: {
       </div>
       {boxes.size === 0 ? <div className="mm-empty">Loading map…</div> : null}
       <div className="mm-hint" aria-hidden="true">
-        {IS_MAC ? "⌘K" : "Ctrl K"} commands · Tab child · Enter sibling · Space collapse · drag to pan
+        {IS_MAC ? "⌘K" : "Ctrl K"} commands · Tab child · Space collapse · double-click to rename or add · drag to move or link
       </div>
       {region && <OffscreenMarkers ctl={ctl} region={region} cam={cam.current} size={size.current} onFly={(id) => props.apiRef.current?.reveal(id)} />}
       {region && <Minimap ctl={ctl} region={region} onNavigate={(x, y) => setCam({ ...cam.current, x: size.current.w / 2 - x * cam.current.k, y: size.current.h / 2 - y * cam.current.k })} />}

@@ -17,12 +17,27 @@ import (
 )
 
 func (s *Server) listMaps(w http.ResponseWriter, r *http.Request, p *principal) {
-	maps, err := s.svc.Store.ListMaps(r.URL.Query().Get("workspace_id"), p.scope)
+	archived := r.URL.Query().Get("archived") == "1"
+	maps, err := s.svc.Store.ListMaps(r.URL.Query().Get("workspace_id"), p.scope, archived)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, 200, maps)
+}
+
+// deleteMap soft-deletes a map (hidden, kept for 30 days). Host-only like
+// creation; the map must not have live agents or an active share.
+func (s *Server) deleteMap(w http.ResponseWriter, r *http.Request, p *principal) {
+	if !p.host || p.scope != "" {
+		writeErr(w, contract.Errf(contract.ErrForbidden, "only an all-maps local token can delete maps"))
+		return
+	}
+	if err := s.svc.Store.DeleteMap(r.PathValue("map")); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"deleted": r.PathValue("map")})
 }
 
 func (s *Server) createMap(w http.ResponseWriter, r *http.Request, p *principal) {
