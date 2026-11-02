@@ -67,6 +67,11 @@ make package-host  # builds kandev-plugin-mindmap-<version>.tar.gz for this plat
 curl -F package=@kandev-plugin-mindmap-0.3.5.tar.gz http://127.0.0.1:38430/api/plugins/install
 ```
 
+Every `v*` tag gets a GitHub Release with the packaged tarball built by CI
+(see `.github/workflows/release.yml`), so you can also grab it from the
+[releases page](https://github.com/Prithpal-Sooriya/kandev-plugin-mindmap/releases)
+instead of building locally.
+
 UI development without Kandev or the Go backend:
 
 ```sh

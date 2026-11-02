@@ -1,0 +1,86 @@
+name: Release
+
+# Push a tag like v0.3.5 (must match manifest.yaml version) to build the
+# plugin package for all platforms and publish it as a GitHub Release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Package and publish release
+    runs-on: ubuntu-latest
+    steps:
+      # go.mod and package.json expect the SDK checkout at plugin/../kandev-sdk.
+      - name: Check out plugin
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          path: plugin
+
+      - name: Read pinned Kandev source revision
+        id: sdk
+        working-directory: plugin
+        run: |
+          set -euo pipefail
+          sdk_ref="$(cat .kandev-sdk-ref)"
+          [[ "$sdk_ref" =~ ^[0-9a-f]{40}$ ]]
+          echo "ref=$sdk_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Check out kandev SDK contract
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: kdlbs/kandev
+          path: kandev-sdk
+          ref: ${{ steps.sdk.outputs.ref }}
+          sparse-checkout: |
+            apps/backend
+            apps/packages/plugin-sdk
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: plugin/go.mod
+          cache-dependency-path: plugin/go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24
+
+      - name: Install UI dependencies
+        working-directory: plugin
+        run: npm install --no-audit --no-fund --ignore-scripts
+
+      - name: Verify tag matches manifest version
+        working-directory: plugin
+        run: |
+          set -euo pipefail
+          manifest_version="$(sed -n 's/^version: "\(.*\)"$/\1/p' manifest.yaml | head -n 1)"
+          tag_version="${GITHUB_REF_NAME#v}"
+          echo "manifest=$manifest_version tag=$tag_version"
+          if [[ "$manifest_version" != "$tag_version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match manifest.yaml version $manifest_version"
+            exit 1
+          fi
+
+      - name: Package (all platforms)
+        working-directory: plugin
+        run: make package
+
+      - name: Create GitHub Release
+        working-directory: plugin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            kandev-plugin-mindmap-*.tar.gz
