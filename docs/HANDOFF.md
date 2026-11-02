@@ -24,7 +24,7 @@ How this is built: the build moved from Claude Code to Cursor on 2026-10-31. A C
 | Run time budget, concurrency-cap race, stop windows | Merged | PR #17 |
 | 0.3.3 closeout: compile reserves run slots, cross-map asset attach is a conflict, one full live Pi compile in local Kandev | Merged | PR #18 |
 | 0.3.5 release: halo crash fix (Canvas h-shadowing) + dark-theme text contrast on node cards | Merged | PR #20 |
-| 0.3.6 release: map archive/delete, free node layout (settings.layout), solid cross-links, mouse controls (dbl-click rename/add, port-drag links, link re-point, root drag) | Merged | PR #23 |
+| 0.3.6 release: map archive/delete, free node layout (settings.layout), solid cross-links, mouse controls (dbl-click rename/add, port-drag links, link re-point, root drag) | Merged | PR #23 + #24 (release republished with the correctly named 0.3.6 asset) |
 | 0.3.4 release: bump version and ship idle-turn nudge fix | Merged | PR #19 |
 
 When no profile is given, runs use the first available of Pi, then Cursor, then Claude. The installed version in local Kandev is 0.3.6.
