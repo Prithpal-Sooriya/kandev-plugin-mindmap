@@ -179,10 +179,10 @@ select.mm-input { padding-right: 4px; }
 .mm-dragging { opacity: 0.35; }
 .mm-uncited { opacity: 0.72; border-style: dashed; }
 .mm-badges { display: flex; align-items: center; gap: 5px; height: 16px; margin-top: 2px; overflow: hidden; }
-.mm-badge { display: inline-flex; align-items: center; gap: 2px; height: 15px; padding: 0 5px; border-radius: 4px; background: var(--muted); font-size: 10px; color: var(--muted-foreground); }
-.mm-conf-low { color: var(--destructive); }
-.mm-conf-high { color: var(--mm-ok); }
-.mm-tag { font-size: 10px; color: var(--muted-foreground); white-space: nowrap; }
+.mm-badge { display: inline-flex; align-items: center; gap: 2px; height: 15px; padding: 0 5px; border-radius: 4px; background: var(--muted); font-size: 10px; color: color-mix(in oklch, var(--muted-foreground) 80%, var(--foreground)); }
+.mm-conf-low { color: color-mix(in oklch, var(--destructive) 70%, black); }
+.mm-conf-high { color: color-mix(in oklch, var(--mm-ok) 70%, black); }
+.mm-tag { font-size: 10px; color: color-mix(in oklch, var(--muted-foreground) 80%, var(--foreground)); white-space: nowrap; }
 .mm-thumb { height: 15px; width: 24px; object-fit: cover; border-radius: 3px; border: 1px solid var(--border); }
 .mm-collapsed-count {
   position: absolute; top: 50%; right: -11px; transform: translateY(-50%); min-width: 20px; height: 20px; padding: 0 5px;
@@ -211,6 +211,17 @@ select.mm-input { padding-right: 4px; }
 .mm-k-doc { --mm-kind: var(--muted-foreground); }
 .mm-k-topic { --mm-kind: var(--primary); }
 
+/* Dark-theme readability on cards. Host dark palettes keep mid-lightness
+   primaries/accents, which drops card text and glyphs below ~4:1 (measured on
+   Kandev dark: root title 3.9, kind glyphs 3.5-3.8, badges 4.0, ghost tag 2.6).
+   Scoped to .mm-theme-dark, which App toggles in both hosts; light is untouched. */
+.mm-theme-dark .mm-root-node { background: color-mix(in oklch, var(--primary) 75%, black); }
+.mm-theme-dark .mm-k-idea, .mm-theme-dark .mm-k-topic { --mm-kind: color-mix(in oklch, var(--primary) 65%, white); }
+.mm-theme-dark .mm-k-decision { --mm-kind: color-mix(in oklch, var(--accent) 65%, white); }
+.mm-theme-dark .mm-k-doc { --mm-kind: color-mix(in oklch, var(--muted-foreground) 35%, var(--foreground)); }
+.mm-theme-dark .mm-conf-high { color: color-mix(in oklch, var(--mm-ok) 80%, white); }
+.mm-theme-dark .mm-conf-low { color: color-mix(in oklch, var(--destructive) 80%, white); }
+
 /* low zoom (LOD): simplified cards, switched by one class on the viewport so no card re-renders */
 .mm-lod-on .mm-node { box-shadow: none; }
 .mm-lod-on .mm-node:not(.mm-root-node) .mm-node-title { visibility: hidden; }
@@ -230,9 +241,9 @@ select.mm-input { padding-right: 4px; }
   display: grid; place-items: center; font-size: 11px; font-weight: 700; color: white;
 }
 .mm-rb-q { background: var(--mm-warn); color: var(--warning-foreground, #3a2600); }
-.mm-rb-review { background: var(--accent); }
-.mm-rb-fail { background: var(--destructive); }
-.mm-rb-done { background: var(--mm-ok); }
+.mm-rb-review { background: color-mix(in oklch, var(--accent) 65%, black); }
+.mm-rb-fail { background: color-mix(in oklch, var(--destructive) 75%, black); }
+.mm-rb-done { background: color-mix(in oklch, var(--mm-ok) 70%, black); }
 @keyframes mm-pulse {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--mm-agent, var(--primary)) 45%, transparent); }
   50% { box-shadow: 0 0 0 7px color-mix(in oklch, var(--mm-agent, var(--primary)) 0%, transparent); }
@@ -248,11 +259,11 @@ select.mm-input { padding-right: 4px; }
 
 /* ghost proposal layer */
 .mm-ghost { background: color-mix(in oklch, var(--accent) 7%, var(--background)); border: 1.5px dashed var(--accent); box-shadow: none; opacity: 0.92; }
-.mm-ghost-tag { position: absolute; bottom: -8px; right: 8px; padding: 0 5px; font-size: 9px; border-radius: 4px; background: var(--accent); color: var(--accent-foreground, white); text-transform: uppercase; letter-spacing: 0.04em; }
+.mm-ghost-tag { position: absolute; bottom: -8px; right: 8px; padding: 0 5px; font-size: 9px; border-radius: 4px; background: color-mix(in oklch, var(--accent) 65%, black); color: var(--accent-foreground, white); text-transform: uppercase; letter-spacing: 0.04em; }
 .mm-ghost-delete { border: 1.5px dashed var(--destructive); }
 .mm-ghost-delete .mm-node-text { text-decoration: line-through; text-decoration-color: var(--destructive); }
 .mm-ghost-update { border-color: var(--accent); }
-.mm-ghost-update::after { content: "~"; position: absolute; top: -8px; right: -6px; width: 16px; height: 16px; border-radius: 99px; display: grid; place-items: center; background: var(--accent); color: white; font-weight: 700; font-size: 12px; }
+.mm-ghost-update::after { content: "~"; position: absolute; top: -8px; right: -6px; width: 16px; height: 16px; border-radius: 99px; display: grid; place-items: center; background: color-mix(in oklch, var(--accent) 65%, black); color: white; font-weight: 700; font-size: 12px; }
 .mm-ghost-moving, .mm-ghost-merge { border-style: dashed; border-color: var(--accent); }
 .mm-node-toolbar {
   position: absolute; left: 0; top: 0; transform-origin: 0 0; display: flex; align-items: center; gap: 6px; padding: 4px 6px;

@@ -459,7 +459,7 @@ export function Canvas(props: {
       );
     });
 
-  const halos = computeHalos(ctl).map((h, i) => <rect key={`halo-${h.id}`} x={h.box.x} y={h.box.y} width={h.box.w} height={h.box.h} rx="16" fill={h.color} opacity="0.1" />);
+  const halos = computeHalos(ctl).map((halo) => <rect key={`halo-${halo.id}`} x={halo.box.x} y={halo.box.y} width={halo.box.w} height={halo.box.h} rx="16" fill={halo.color} opacity="0.1" />);
   const arrows = display.arrows.map((a, i) => {
     const from = boxes.get(a.from), to = boxes.get(a.to);
     if (!from || !to) return null;

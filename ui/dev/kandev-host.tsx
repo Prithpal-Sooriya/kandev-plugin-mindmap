@@ -41,6 +41,7 @@ const host = {
     {
       registerRoute: (path: string, component: Route["component"]) => routes.push({ path, component }),
       registerNavItem: () => {},
+      registerTaskPanel: () => {},
     },
     host,
   );
