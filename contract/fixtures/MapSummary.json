@@ -6,6 +6,7 @@
     "nodes": 5,
     "active_runs": 1,
     "shared": true,
+    "archived": true,
     "updated_at": "2026-10-01T12:30:00Z"
   }
 ]

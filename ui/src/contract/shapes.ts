@@ -26,6 +26,9 @@ export type Budget = Infer<typeof BudgetShape>;
 export const BudgetUsageShape = obj("BudgetUsage", { nodes: int, subagents: int, depth: int });
 export type BudgetUsage = Infer<typeof BudgetUsageShape>;
 
+export const PointShape = obj("Point", { x: num, y: num });
+export type Point = Infer<typeof PointShape>;
+
 export const MapSettingsShape = obj("MapSettings", {}, {
   default_mode: oneOf(RUN_MODES),
   default_profile_id: str(),
@@ -33,6 +36,8 @@ export const MapSettingsShape = obj("MapSettings", {}, {
   max_concurrent_runs: int,
   export_dir: str(),
   require_guest_run_approval: bool,
+  layout: record(PointShape),
+  archived: bool,
 });
 export type MapSettings = Infer<typeof MapSettingsShape>;
 
@@ -95,7 +100,6 @@ export const ParticipantShape = obj("Participant", {
 }, { is_host: bool, harness: oneOf(HARNESSES), run_id: id, online: bool });
 export type Participant = Infer<typeof ParticipantShape>;
 
-export const PointShape = obj("Point", { x: num, y: num });
 export const RectShape = obj("Rect", { x: num, y: num, w: num, h: num });
 export const SoftLockShape = obj("SoftLock", { node_id: id, field: oneOf(LOCK_FIELDS), expires_at: time });
 export type SoftLock = Infer<typeof SoftLockShape>;
@@ -246,7 +250,7 @@ export type SubmitRequest = Infer<typeof SubmitRequestShape>;
 
 export const MapSummaryShape = obj("MapSummary", {
   id, title: str(), workspace_id: str(), nodes: int, active_runs: int, updated_at: time,
-}, { shared: bool });
+}, { shared: bool, archived: bool });
 export type MapSummary = Infer<typeof MapSummaryShape>;
 
 export const CreateMapRequestShape = obj("CreateMapRequest", { workspace_id: str(), title: str() }, { repo_id: str() });

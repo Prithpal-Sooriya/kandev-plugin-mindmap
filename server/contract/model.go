@@ -35,6 +35,11 @@ type MapSettings struct {
 	// RequireGuestRunApproval holds guest-started runs in waiting/approval
 	// until the host approves. Off by default.
 	RequireGuestRunApproval bool `json:"require_guest_run_approval,omitempty"`
+	// Layout holds host-authored node positions (world px, top-left). Nodes
+	// without an entry keep their automatic tree position; cosmetic only.
+	Layout map[string]Point `json:"layout,omitempty"`
+	// Archived hides the map from the map list without deleting it.
+	Archived bool `json:"archived,omitempty"`
 }
 
 // Actor attributes an op, node, link or event to a participant, and to a run

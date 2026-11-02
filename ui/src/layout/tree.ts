@@ -57,6 +57,9 @@ export interface LayoutResult {
 export interface LayoutOptions {
   /** Whether a node shows a badge row (affects its height). */
   hasBadges?: (n: LayoutNode) => boolean;
+  /** Host-authored position override for a node (top-left, world px). Nodes
+   *  without an entry keep their automatic tree position. */
+  pos?: (id: string) => { x: number; y: number } | undefined;
 }
 
 interface Size {
@@ -132,7 +135,13 @@ export class TreeLayout {
     children.set(rootId, [...right.map((c) => c.id), ...left.map((c) => c.id)]);
 
     const rs = size(root);
-    this.put(boxes, root, "", -rs.w / 2, -rs.h / 2, rs, 0, 0, hiddenCount);
+    // Host-authored positions override the automatic tree placement, one
+    // node at a time. The root override shifts its branches with it.
+    const pos = opts.pos;
+    const rootPos = pos?.(rootId);
+    const rx = rootPos?.x ?? -rs.w / 2;
+    const ry = rootPos?.y ?? -rs.h / 2;
+    this.put(boxes, root, "", rx, ry, rs, 0, 0, hiddenCount);
 
     const place = (list: LayoutNode[], parentId: string, side: 1 | -1, depth: number, edgeX: number, cy: number) => {
       let total = 0;
@@ -143,18 +152,22 @@ export class TreeLayout {
         const e = ext.get(c.id)!;
         const s = size(c);
         const ccy = top + e / 2;
-        const x = side === 1 ? edgeX : edgeX - s.w;
-        this.put(boxes, c, parentId, x, ccy - s.h / 2, s, side, depth, hiddenCount);
+        const o = pos?.(c.id);
+        const x = o ? o.x : side === 1 ? edgeX : edgeX - s.w;
+        const y = o ? o.y : ccy - s.h / 2;
+        this.put(boxes, c, parentId, x, y, s, side, depth, hiddenCount);
         const vk = visibleKids(c.id);
         if (vk.length) {
           children.set(c.id, vk.map((v) => v.id));
-          place(vk, c.id, side, depth + 1, side === 1 ? x + s.w + GAP.h : x - GAP.h, ccy);
+          // Children stack around the placed card's own center, so an
+          // overridden parent carries its subtree with it.
+          place(vk, c.id, side, depth + 1, side === 1 ? x + s.w + GAP.h : x - GAP.h, y + s.h / 2);
         }
         top += e + GAP.v;
       }
     };
-    place(right, rootId, 1, 1, rs.w / 2 + GAP.rootH, 0);
-    place(left, rootId, -1, 1, -rs.w / 2 - GAP.rootH, 0);
+    place(right, rootId, 1, 1, rx + rs.w + GAP.rootH, ry + rs.h / 2);
+    place(left, rootId, -1, 1, rx - GAP.rootH, ry + rs.h / 2);
     return this.finish(boxes, children);
   }
 

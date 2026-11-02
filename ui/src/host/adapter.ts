@@ -3,7 +3,7 @@
 //   ui/src/standalone/adapter.ts  guest web app (own React, /m/<token>/ paths)
 import type {
   ActivityEvent, AgentProfile, CompileRequest, CreateMapRequestShape, DocTree, Infer, MapSummary, MindMap, Op, OutputLine, Participant,
-  Proposal, RepoInfo, ReviewProposalRequest, Run, ShareLink, StartRunRequest, SuggestRequest, SuggestResponse, SwarmRequest, TaskRunInfo,
+  Proposal, RepoInfo, ReviewProposalRequest, Run, ShareLink, Snapshot, StartRunRequest, SuggestRequest, SuggestResponse, SwarmRequest, TaskRunInfo,
 } from "../contract";
 import type { MapEndpoints, WsFactory } from "../transport/connection";
 
@@ -13,8 +13,12 @@ export type ToastKind = "info" | "success" | "error";
 
 /** The `/api/*` routes of protocol §4 that the canvas calls. */
 export interface MapApi {
-  listMaps(): Promise<MapSummary[]>;
+  listMaps(opts?: { archived?: boolean }): Promise<MapSummary[]>;
   createMap(req: CreateMapRequest): Promise<MindMap>;
+  /** One map's full snapshot, used to echo settings back in map.update. */
+  getMap(mapId: string): Promise<Snapshot>;
+  /** Soft-deletes a map: hidden, kept for 30 days. Host-only. */
+  deleteMap(mapId: string): Promise<void>;
   renameMap?(mapId: string, title: string): Promise<void>;
   profiles(): Promise<AgentProfile[]>;
   reviewProposal(proposalId: string, req: ReviewProposalRequest): Promise<Proposal>;

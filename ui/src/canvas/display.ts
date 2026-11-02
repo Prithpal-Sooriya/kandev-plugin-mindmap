@@ -97,6 +97,8 @@ export function buildDisplay(layout: TreeLayout, input: DisplayInput): Display {
       const m = n as MapNode;
       return !!(m.sources?.length || m.confidence !== undefined || m.assets?.length || m.tags?.length);
     },
+    // Host-authored free positions from map settings; guests see them too.
+    pos: (id) => doc.map?.settings?.layout?.[id],
   });
   const links = [...doc.links.values()].filter((l) => !l.deleted);
   return { nodes: doc.nodes, links, ghosts, ghostLinks, arrows, layout: result, rootId, runsByNode, pendingByNode };

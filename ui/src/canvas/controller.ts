@@ -3,12 +3,13 @@
 // Components subscribe to `version` and re-render at most once per frame.
 import {
   ContractError, LIMITS, buildParentIndex, compareSiblings, newId, orderBetween, type ContractErrorBody, type MapNode,
-  type NodeKind, type Presence, type ReviewProposalRequest,
+  type NodeKind, type Point, type Presence, type ReviewProposalRequest,
 } from "../contract";
 import { childrenOf, cloneDoc, emptyDoc, applyOp, type Doc } from "../core/doc";
 import { SyncEngine, type OpDraft } from "../core/sync";
 import { UndoStack, inverseOf } from "../core/undo";
 import type { HostAdapter } from "../host/adapter";
+import { measureCard } from "../layout/measure";
 import { TreeLayout } from "../layout/tree";
 import { Connection, type ConnState } from "../transport/connection";
 import { buildDisplay, type Display } from "./display";
@@ -210,6 +211,88 @@ export class MapController {
     this.select(nid);
     this.startEdit(nid, undefined, true);
     return nid;
+  }
+
+  // --- free layout & links (mouse controls) ---------------------------------
+
+  /** True when this client may write map settings (positions, archive).
+   *  The server enforces this too; this skips the doomed op for guests. */
+  private canSetSettings(): boolean {
+    const p = this.engine.participant;
+    return !p || p.is_host === true;
+  }
+
+  /** A settings payload echoing current settings plus a layout tweak.
+   *  layout undefined removes the whole override map (reset to auto). */
+  private settingsDraft(layout: Record<string, Point> | undefined): OpDraft | null {
+    const m = this.view.map;
+    if (!m || !this.canSetSettings()) return null;
+    const settings = { ...m.settings };
+    if (layout === undefined) delete settings.layout;
+    else settings.layout = layout;
+    return { type: "map.update", payload: { settings } };
+  }
+
+  /** Pins a node at world coords (top-left). Runs when a card drag ends in
+   *  empty space; the tidy tree no longer owns that node's position. */
+  positionNode(id: string, x: number, y: number): void {
+    if (!this.node(id)) return;
+    const layout: Record<string, Point> = { ...(this.view.map?.settings?.layout ?? {}) };
+    layout[id] = { x: Math.round(x), y: Math.round(y) };
+    const d = this.settingsDraft(layout);
+    if (d) this.edit([d]);
+  }
+
+  /** Forgets every position override; the automatic tidy tree returns. */
+  clearLayout(): void {
+    const d = this.settingsDraft(undefined);
+    if (d) this.edit([d]);
+  }
+
+  /** addChild, but the new card lands centered on the click point (world
+   *  coords). The nearest node becomes its parent. Hosts only place it. */
+  addChildAt(parentId: string, x: number, y: number): string | null {
+    const parent = this.node(parentId);
+    if (!parent || parent.deleted) return null;
+    const kids = childrenOf(this.view, parent.id);
+    const d = this.newNode(parent.id, orderBetween(kids.at(-1)?.order ?? "", ""));
+    const drafts: OpDraft[] = [d];
+    if (parent.collapsed) drafts.push({ type: "node.update", payload: { id: parent.id, set: { collapsed: false } } });
+    const id = (d.payload as { node: { id: string } }).node.id;
+    if (this.canSetSettings()) {
+      const m = measureCard({ title: "New idea", isRoot: false, badges: false });
+      const layout: Record<string, Point> = { ...(this.view.map?.settings?.layout ?? {}) };
+      layout[id] = { x: Math.round(x - m.w / 2), y: Math.round(y - m.h / 2) };
+      drafts.push({ type: "map.update", payload: { settings: { ...this.view.map?.settings, layout } } });
+    }
+    this.edit(drafts);
+    this.select(id);
+    this.startEdit(id, undefined, true);
+    return id;
+  }
+
+  /** Adds a cross-link between two nodes (drag from a card's port dot). */
+  addLink(from: string, to: string): void {
+    const a = this.node(from);
+    const b = this.node(to);
+    if (!a || !b || from === to || a.deleted || b.deleted) return;
+    const dup = [...this.view.links.values()].some(
+      (l) => !l.deleted && ((l.from === from && l.to === to) || (l.from === to && l.to === from)),
+    );
+    if (dup) return;
+    this.edit([{ type: "link.create", payload: { link: { id: newId("ln"), from, to } } }]);
+  }
+
+  /** Re-points one end of a link at another node (drag an endpoint handle). */
+  relink(linkId: string, from: string, to: string): void {
+    const l = this.view.links.get(linkId);
+    const a = this.node(from);
+    const b = this.node(to);
+    if (!l || l.deleted || !a || !b || from === to) return;
+    this.edit([
+      { type: "link.delete", payload: { id: linkId } },
+      { type: "link.create", payload: { link: { id: newId("ln"), from, to, ...(l.label ? { label: l.label } : {}), ...(l.reason ? { reason: l.reason } : {}) } } },
+    ]);
   }
 
   setTitle(id: string, title: string): boolean {

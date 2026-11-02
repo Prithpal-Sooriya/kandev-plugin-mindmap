@@ -44,6 +44,7 @@ type MapSummary struct {
 	Nodes       int       `json:"nodes"`
 	ActiveRuns  int       `json:"active_runs"`
 	Shared      bool      `json:"shared,omitempty"`
+	Archived    bool      `json:"archived,omitempty"` // hidden from the list but kept
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 

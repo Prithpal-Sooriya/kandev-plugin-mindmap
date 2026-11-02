@@ -148,8 +148,9 @@ contract types. Errors return `{"error": Error}` with the HTTP status from `Erro
 |---|---|
 | `GET /m/<t>/` | standalone web app (same canvas code, built with its own React) |
 | `GET /m/<t>/ws` | WebSocket (§5) |
-| `GET /m/<t>/api/maps` | `MapSummary[]`. Local tokens only; share tokens see their one map |
+| `GET /m/<t>/api/maps` | `MapSummary[]`. Local tokens only; share tokens see their one map. `?archived=1` lists archived maps instead (see `MapSettings.archived`) |
 | `POST /m/<t>/api/maps` | `CreateMapRequest` → `Map` (local tokens only) |
+| `DELETE /m/<t>/api/maps/<map>` | host only, all-maps local token: soft-delete the map (`deleted_at`, purged after 30 days; §12). `409` while runs are queued/running/waiting or the map is shared. Idempotent: repeat → `204` |
 | `GET /m/<t>/api/maps/<map>/snapshot` | `Snapshot` |
 | `GET /m/<t>/api/maps/<map>/sync?cursor=&wait=` | long-poll (§6) |
 | `POST /m/<t>/api/maps/<map>/ops` | `SubmitRequest` → `SyncResponse` |
@@ -506,6 +507,12 @@ Example reply:
 `$KANDEV_PLUGIN_DATA_DIR/assets/<sha256[0:2]>/<sha256>`, deduplicated by hash. The `assets` table maps ids to hashes.
 `PRAGMA user_version` holds the migration number.
 
+Soft-deleted maps (`DELETE /api/maps/<map>`) keep their rows with `deleted_at` set and vanish from every list and
+snapshot; a periodic purge removes them after 30 days. Archived maps (`MapSettings.archived`) stay fully live — the
+host UI just hides them behind the archive view; share tokens keep seeing them. The list filter reads
+`json_extract(settings_json, '$.archived')` — an exception to the "never query inside `*_json`" rule, so the flag can
+ride the existing `settings_json` blob without a migration.
+
 ## 13. Phase 1a implementation notes
 
 What the backend does today, including additions to and clarifications of the sections above. Clients should code
@@ -520,6 +527,11 @@ against these.
 
 - The manifest also subscribes to `message.updated`, so `mindmap-patch` blocks in agent messages that stream in
   through updates are still executed (each block once, keyed by `(message_id, block index)`).
+- **Map settings fields** (0.3.6): `settings.archived` — a UI-only flag hiding the map from the active list (§12);
+  `settings.layout` — `map[node id] → {x, y}` free positions in world pixels, top-left of the card, host-authored.
+  Both ride the existing `map.update` op (settings are replaced whole, undo flips them back). `layout` is capped at
+  `MaxMapNodes` entries with `MaxCoord` bounds and every id must exist. Clients should treat unknown positions as
+  "use the automatic tree layout". Archived maps still accept ops and stay visible to share tokens.
 - Compile, suggest, docs and export are live since Phase 2c (§15). Share,
   rotate, stop, status, join, audit, share settings and the kill switch are live (Phase 2d). Runs, swarms, stop,
   message, approve and answers work since Phase 2a (§14). While `require_guest_run_approval` is on, a guest's run

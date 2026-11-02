@@ -2,7 +2,7 @@
 // MapApi built on top of a `/api/*` caller.
 import {
   CONTRACT_HEADER, CONTRACT_VERSION, ContractError, type ActivityEvent, type AgentProfile, type DocTree, type ErrorCode, type MapSummary,
-  type MindMap, type Op, type Proposal, type RepoInfo, type Run, type ShareLink, type SuggestResponse, type TaskRunInfo,
+  type MindMap, type Op, type Proposal, type RepoInfo, type Run, type ShareLink, type Snapshot, type SuggestResponse, type TaskRunInfo,
 } from "../contract";
 import type { MapApi } from "./adapter";
 
@@ -46,8 +46,10 @@ export function mapApi(call: ApiCall, blob: BlobCall): MapApi {
   const m = (mapId: string) => `/maps/${encodeURIComponent(mapId)}`;
   const docQuery = (id?: string) => (id ? `?node_id=${encodeURIComponent(id)}` : "");
   return {
-    listMaps: () => call<MapSummary[]>("GET", "/maps"),
+    listMaps: (opts) => call<MapSummary[]>("GET", `/maps${opts?.archived ? "?archived=1" : ""}`),
     createMap: (req) => call<MindMap>("POST", "/maps", req),
+    getMap: (mapId) => call<Snapshot>("GET", `${m(mapId)}/snapshot`),
+    deleteMap: (mapId) => call<void>("DELETE", `${m(mapId)}`),
     profiles: () => call<AgentProfile[]>("GET", "/profiles"),
     reviewProposal: (id, req) => call<Proposal>("POST", `/proposals/${encodeURIComponent(id)}/review`, req),
     startRun: async (mapId, req) =>

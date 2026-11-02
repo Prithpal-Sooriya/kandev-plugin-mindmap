@@ -119,12 +119,20 @@ const httpServer = createServer(async (req, res) => {
     const allowed = (mapId: string) => !sc.maps || sc.maps.includes(mapId);
     let r: RegExpExecArray | null;
     if (path === "/maps" && method === "GET") {
-      return send(res, 200, server.listMaps().filter((x) => allowed(x.id)));
+      const archived = url.searchParams.get("archived") === "1";
+      return send(res, 200, server.listMaps(archived).filter((x) => allowed(x.id)));
     }
     if (path === "/maps" && method === "POST") {
       if (sc.kind !== "local") return send(res, 403, { error: { code: "forbidden", message: "share links cannot create maps" } });
       const body = (await readBody(req)) as { title: string; workspace_id: string };
       return send(res, 200, server.createMap(body.title, body.workspace_id));
+    }
+    if ((r = /^\/maps\/([^/]+)$/.exec(path)) && method === "DELETE") {
+      if (sc.kind !== "local" || sc.maps) return send(res, 403, { error: { code: "forbidden", message: "only an all-maps local token can delete maps" } });
+      const mapId = r[1]!;
+      if (!server.maps.has(mapId)) return send(res, 404, { error: { code: "not_found", message: "no such map" } });
+      server.deleteMap(mapId);
+      return send(res, 200, { deleted: mapId });
     }
     if (path === "/profiles") {
       return send(res, 200, [{ id: "profile-claude", name: "Claude", harness: "claude" }, { id: "profile-cursor", name: "Cursor", harness: "cursor" }]);

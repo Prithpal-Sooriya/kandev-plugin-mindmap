@@ -80,6 +80,11 @@ select.mm-input { padding-right: 4px; }
   display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 4px; border: 1px solid var(--border);
   border-radius: var(--mm-radius); background: var(--card);
 }
+.mm-map-card.mm-map-archived { background: color-mix(in oklch, var(--card) 88%, var(--muted)); }
+.mm-map-archived .mm-map-open strong { color: var(--muted-foreground); }
+.mm-archive-toggle { margin-bottom: 12px; }
+.mm-icon-btn.mm-icon-danger:hover { background: color-mix(in oklch, var(--destructive) 14%, transparent); color: var(--destructive); }
+.mm-icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .mm-map-open {
   flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px;
   background: none; border: 0; text-align: left; cursor: pointer; border-radius: 8px;
@@ -141,9 +146,28 @@ select.mm-input { padding-right: 4px; }
 .mm-edge { fill: none; stroke: var(--mm-line); stroke-width: 1.6; }
 .mm-edge-d1 { stroke-width: 2.4; stroke: color-mix(in oklch, var(--foreground) 30%, transparent); }
 .mm-edge-ghost { stroke-dasharray: 5 4; stroke: color-mix(in oklch, var(--accent) 70%, transparent); }
-.mm-link path { fill: none; stroke: color-mix(in oklch, var(--accent) 75%, transparent); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.mm-link .mm-line { fill: none; stroke: color-mix(in oklch, var(--accent) 75%, transparent); stroke-width: 1.8; }
+.mm-link:hover .mm-line { stroke: color-mix(in oklch, var(--accent) 95%, transparent); }
+/* fat invisible twin so the curve is easy to hover and grab */
+.mm-link .mm-link-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: grab; }
+/* endpoint handles: appear on hover, drag to re-point the link */
+.mm-link .mm-link-end { fill: var(--background); stroke: var(--accent); stroke-width: 2; opacity: 0; pointer-events: all; cursor: grab; transition: opacity 0.12s; }
+.mm-link:hover .mm-link-end { opacity: 1; }
+.mm-link .mm-link-end:hover { stroke-width: 3; }
 .mm-link text { fill: var(--muted-foreground); font-size: 11px; paint-order: stroke; stroke: var(--background); stroke-width: 4px; }
-.mm-link-ghost path { stroke-dasharray: 2 4; opacity: 0.8; }
+.mm-link-ghost .mm-line { stroke-dasharray: 2 4; opacity: 0.8; }
+/* rubber band while drawing / re-pointing a link */
+.mm-rubber { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 4; pointer-events: none; }
+/* link ports on cards: two dots, shown on hover, drag to draw a link */
+.mm-port {
+  position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--background);
+  transform: translate(-50%, -50%); opacity: 0; pointer-events: all; cursor: crosshair;
+  transition: opacity 0.12s; z-index: 3;
+}
+.mm-port-l { left: 0; }
+.mm-port-r { left: 100%; }
+.mm-node:hover .mm-port, .mm-port:hover { opacity: 1; }
 .mm-arrowhead { fill: color-mix(in oklch, var(--accent) 75%, transparent); }
 .mm-arrowhead-ghost { fill: var(--accent); }
 .mm-ghost-arrow { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 7 5; }

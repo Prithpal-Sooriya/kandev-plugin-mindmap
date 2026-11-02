@@ -8,3 +8,4 @@
 !/server/web/dist/index.html
 /bridge/dist/
 /bridge/node_modules/
+.claude/worktrees/

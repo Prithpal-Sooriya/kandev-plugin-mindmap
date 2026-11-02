@@ -38,6 +38,8 @@ interface Batch {
 interface MapState {
   doc: Doc;
   log: Op[];
+  /** Soft-deleted maps are gone from every list. */
+  deleted?: boolean;
   opRevs: Map<string, number>;
   /** op id -> client_id that submitted it (long-poll echo suppression, §13). */
   opClient: Map<string, string>;
@@ -99,13 +101,25 @@ export class FakeServer {
     return st.doc.map!;
   }
 
-  listMaps(): MapSummary[] {
-    return [...this.maps.values()].map((s) => ({
-      id: s.doc.map!.id, title: s.doc.map!.title, workspace_id: s.doc.map!.workspace_id,
-      nodes: [...s.doc.nodes.values()].filter((n) => !n.deleted).length,
-      active_runs: [...s.runs.values()].filter((r) => r.status === "running" || r.status === "queued").length,
-      updated_at: s.doc.map!.updated_at,
-    }));
+  listMaps(archived = false): MapSummary[] {
+    return [...this.maps.values()]
+      .filter((s) => !s.deleted && !!s.doc.map!.settings.archived === archived)
+      .map((s) => ({
+        id: s.doc.map!.id, title: s.doc.map!.title, workspace_id: s.doc.map!.workspace_id,
+        nodes: [...s.doc.nodes.values()].filter((n) => !n.deleted).length,
+        active_runs: [...s.runs.values()].filter((r) => r.status === "running" || r.status === "queued").length,
+        updated_at: s.doc.map!.updated_at,
+        ...(archived ? { archived: true } : {}),
+      }));
+  }
+
+  /** Soft delete like the real store: hidden from every list, state dropped. */
+  deleteMap(mapId: string): void {
+    const s = this.state(mapId);
+    const live = [...s.runs.values()].some((r) => r.status === "running" || r.status === "queued" || r.status === "waiting");
+    if (live) throw new Reject("conflict", "the map has live agents — stop them before deleting");
+    s.deleted = true;
+    this.maps.delete(mapId);
   }
 
   state(mapId: string): MapState {

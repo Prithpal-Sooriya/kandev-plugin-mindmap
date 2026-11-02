@@ -6,6 +6,17 @@ Status: Phase 1a (backend core), 1b (canvas UI), 2a (agent runs) and 2c (compile
 [docs/protocol.md](docs/protocol.md) for the wire contract (§13 to §15 list what the backend implements so far) and
 [docs/spike-findings.md](docs/spike-findings.md) for what the Phase 0 spike verified.
 
+## Canvas and maps
+
+- **Free layout**: drag any card (the root included) to empty space to pin it there; the rest of its subtree
+  follows. Drop a card on another card to re-parent it as before. **Reset node layout** in the ⌘K palette tidies
+  everything back into the automatic tree.
+- **Mouse**: double-click a card to rename it, double-click empty canvas to add an idea under the nearest card,
+  drag a card's side dots onto another card to draw a cross-link, and drag a link's end circles to re-point it.
+  Cross-links are solid lines; dashed ones are proposals only.
+- **Map cleanup**: archive a map from the list (hide it without losing it), unarchive it later, or delete it —
+  deleted maps are kept for 30 days and cannot be deleted while agents run or the map is shared.
+
 ## Agent runs
 
 Right-click a node, or press ⌘K, and pick **Run agent…**, **Swarm…**, **Explore from here…**, **Execute…** or
@@ -64,7 +75,7 @@ in `.kandev-sdk-ref` (the SDK is not published as its own module yet).
 ```sh
 make test          # go test -race, tsc, vitest
 make package-host  # builds kandev-plugin-mindmap-<version>.tar.gz for this platform
-curl -F package=@kandev-plugin-mindmap-0.3.5.tar.gz http://127.0.0.1:38430/api/plugins/install
+curl -F package=@kandev-plugin-mindmap-0.3.6.tar.gz http://127.0.0.1:38430/api/plugins/install
 ```
 
 Every `v*` tag gets a GitHub Release with the packaged tarball built by CI

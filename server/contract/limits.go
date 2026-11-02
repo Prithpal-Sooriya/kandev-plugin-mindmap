@@ -27,6 +27,7 @@ const (
 	MaxReadLimit       = 500
 	MaxSearchLimit     = 100
 	MaxMapNodes        = 20000
+	MaxCoord           = 1 << 26 // layout positions: |x|,|y| < ~67M world px, enough for any real map
 	MaxAssetBytes      = 10 << 20 // decoded size, any route
 	MaxBase64Chars     = 1400000  // ~1 MiB decoded; keep agent payloads small
 	MaxOrderKeyLen     = 64

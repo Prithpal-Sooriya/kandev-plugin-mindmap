@@ -142,6 +142,7 @@ func (s *Server) routes() *http.ServeMux {
 	m("GET /m/{token}/ws", s.handleWS)
 	m("GET /m/{token}/api/maps", s.listMaps)
 	m("POST /m/{token}/api/maps", s.createMap)
+	m("DELETE /m/{token}/api/maps/{map}", s.deleteMap)
 	m("GET /m/{token}/api/maps/{map}/snapshot", s.snapshot)
 	m("GET /m/{token}/api/maps/{map}/sync", s.syncRoute)
 	m("POST /m/{token}/api/maps/{map}/ops", s.submitRoute)
