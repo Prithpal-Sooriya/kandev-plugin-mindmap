@@ -1,9 +1,10 @@
 .PHONY: deps build test test-backend test-ui test-bridge bridge bridge-deps typecheck vet fmt check-format \
 	bundle package package-host package-file clean
 
-# BIN and VERSION must match manifest.yaml's id and version.
+# BIN must match manifest.yaml's id; VERSION is read from manifest.yaml so the
+# package name can never drift from the manifest the plugin installs with.
 BIN := bin/kandev-plugin-mindmap
-VERSION := 0.3.5
+VERSION := $(shell sed -n 's/^version: "\(.*\)"$$/\1/p' manifest.yaml | head -n 1)
 STAGE := .build/stage
 PKG_OUT := $(notdir $(BIN))-$(VERSION).tar.gz
 
